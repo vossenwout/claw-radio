@@ -852,11 +852,11 @@ read by the AI agent to understand how to operate the radio. It must cover:
 
 **Acceptance criteria:**
 
-- [ ] The file has valid YAML frontmatter with `name: claw-radio` and a `description` that covers: start radio, build seed list, inject banter, react to events
-- [ ] The persona section lists at least 6 genre voice styles
-- [ ] The seed-building section includes query examples for era/genre, artist-based, and mood/abstract vibes
-- [ ] The startup flow shows the full command sequence ending with the events loop
-- [ ] `track_started` handler specifies banter before **every** song
+- [x] The file has valid YAML frontmatter with `name: claw-radio` and a `description` that covers: start radio, build seed list, inject banter, react to events
+- [x] The persona section lists at least 6 genre voice styles
+- [x] The seed-building section includes query examples for era/genre, artist-based, and mood/abstract vibes
+- [x] The startup flow shows the full command sequence ending with the events loop
+- [x] `track_started` handler specifies banter before **every** song
 
 ---
 
