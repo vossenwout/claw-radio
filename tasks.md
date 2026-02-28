@@ -123,14 +123,14 @@ Tests use a mock Unix socket server that speaks the mpv JSON IPC protocol.
 
 **Acceptance criteria:**
 
-- [ ] Given no socket file exists, when `Dial()` is called, then it returns an error
-- [ ] Given a mock mpv socket, when `Command("cycle", "pause")` is called, then the client sends the correct JSON and returns nil on success
-- [ ] Given a mock mpv socket returning `{"data": 30, "error": "success", "request_id": 1}` for a `get_property volume` request, when `Get("volume")` is called, then it returns `json.RawMessage("30")`
-- [ ] Given a mock mpv socket, when `InsertNext("/tmp/song.mp3")` is called with an existing playlist of 3 items at position 1, then the correct 4-step sequence is sent (append, get pos, get count, playlist-move)
-- [ ] Given a mock mpv socket that emits `{"event": "file-loaded"}`, when `Events()` is read, then the map contains `"event": "file-loaded"`
-- [ ] Given `WaitForSocket` called with a socket that appears after 200ms, when timeout is 1s, then it returns nil
-- [ ] Given `WaitForSocket` called with a socket that never appears, when timeout is 200ms, then it returns a timeout error
-- [ ] `go test ./internal/mpv/...` passes
+- [x] Given no socket file exists, when `Dial()` is called, then it returns an error
+- [x] Given a mock mpv socket, when `Command("cycle", "pause")` is called, then the client sends the correct JSON and returns nil on success
+- [x] Given a mock mpv socket returning `{"data": 30, "error": "success", "request_id": 1}` for a `get_property volume` request, when `Get("volume")` is called, then it returns `json.RawMessage("30")`
+- [x] Given a mock mpv socket, when `InsertNext("/tmp/song.mp3")` is called with an existing playlist of 3 items at position 1, then the correct 4-step sequence is sent (append, get pos, get count, playlist-move)
+- [x] Given a mock mpv socket that emits `{"event": "file-loaded"}`, when `Events()` is read, then the map contains `"event": "file-loaded"`
+- [x] Given `WaitForSocket` called with a socket that appears after 200ms, when timeout is 1s, then it returns nil
+- [x] Given `WaitForSocket` called with a socket that never appears, when timeout is 200ms, then it returns a timeout error
+- [x] `go test ./internal/mpv/...` passes
 
 ---
 
