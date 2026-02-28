@@ -730,12 +730,12 @@ Without `--json`: emit human-readable text, e.g.
 
 **Acceptance criteria:**
 
-- [ ] Given mpv not running, when `claw-radio events` is called, then it exits 5
-- [ ] Given a mock mpv socket emitting `file-loaded`, when `events --json` is running, then stdout contains `{"event":"track_started",...}` with title and duration fields
-- [ ] Given a mock mpv socket emitting `end-file` with 1 item remaining in playlist, when `events --json` is running, then stdout contains both `track_ended` and `queue_low` events
-- [ ] Given the mock mpv socket closes, when `events --json` is running, then `engine_stopped` is emitted and the process exits 0
-- [ ] Given `events` without `--json`, then output is human-readable (no JSON braces on the track_started line)
-- [ ] Each JSON event line is flushed immediately (not buffered)
+- [x] Given mpv not running, when `claw-radio events` is called, then it exits 5
+- [x] Given a mock mpv socket emitting `file-loaded`, when `events --json` is running, then stdout contains `{"event":"track_started",...}` with title and duration fields
+- [x] Given a mock mpv socket emitting `end-file` with 1 item remaining in playlist, when `events --json` is running, then stdout contains both `track_ended` and `queue_low` events
+- [x] Given the mock mpv socket closes, when `events --json` is running, then `engine_stopped` is emitted and the process exits 0
+- [x] Given `events` without `--json`, then output is human-readable (no JSON braces on the track_started line)
+- [x] Each JSON event line is flushed immediately (not buffered)
 
 ---
 
