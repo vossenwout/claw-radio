@@ -1,1 +1,2 @@
 2026-02-28: Completed T:1 scaffold. Go module initialized (`github.com/vossenwout/claw-radio`) with Cobra dependency, required directory tree and stub files created, and structural acceptance tests added in `project_structure_test.go` (validated with `go mod tidy`, `go test ./...`, `go build ./...`).
+2026-02-28: Completed T:2 config loader in `internal/config` with defaults, env override (`CLAW_RADIO_CONFIG`), `~` path expansion, binary auto-resolution (`exec.LookPath`), OS-conditional TTS fallback selection, and acceptance tests (`go test ./internal/config/...`).

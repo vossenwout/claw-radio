@@ -79,13 +79,13 @@ auto-detected: `"say"` on `runtime.GOOS == "darwin"`, else tries `"espeak-ng"`,
 
 **Acceptance criteria:**
 
-- [ ] Given no config file exists, when `Load()` is called, then it returns a fully populated struct with all defaults — no error
-- [ ] Given a valid config JSON at `CLAW_RADIO_CONFIG`, when `Load()` is called, then the struct fields override the defaults correctly
-- [ ] Given malformed JSON in the config file, when `Load()` is called, then it returns an error containing the file path
-- [ ] Given `mpv.binary` is empty in config, when `Load()` is called, then `cfg.MPV.Binary` is the resolved path from `exec.LookPath("mpv")` or empty string if not found
-- [ ] Given `tts.data_dir` contains `"~"`, when `Load()` is called, then the `~` is expanded to the real home directory path
-- [ ] On darwin, `Load()` resolves `cfg.TTS.FallbackBinary` to the path of `say`; on non-darwin it tries `espeak-ng`, `espeak`, `festival` in order (tests should be OS-conditional)
-- [ ] `go test ./internal/config/...` passes with no external tools installed
+- [x] Given no config file exists, when `Load()` is called, then it returns a fully populated struct with all defaults — no error
+- [x] Given a valid config JSON at `CLAW_RADIO_CONFIG`, when `Load()` is called, then the struct fields override the defaults correctly
+- [x] Given malformed JSON in the config file, when `Load()` is called, then it returns an error containing the file path
+- [x] Given `mpv.binary` is empty in config, when `Load()` is called, then `cfg.MPV.Binary` is the resolved path from `exec.LookPath("mpv")` or empty string if not found
+- [x] Given `tts.data_dir` contains `"~"`, when `Load()` is called, then the `~` is expanded to the real home directory path
+- [x] On darwin, `Load()` resolves `cfg.TTS.FallbackBinary` to the path of `say`; on non-darwin it tries `espeak-ng`, `espeak`, `festival` in order (tests should be OS-conditional)
+- [x] `go test ./internal/config/...` passes with no external tools installed
 
 ---
 
