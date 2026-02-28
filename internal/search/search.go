@@ -24,14 +24,20 @@ func NewClient(searxngURL string) *Client {
 }
 
 func (c *Client) Search(query string, maxResults int) ([]Result, error) {
+	results, _, err := c.SearchWithStats(query, maxResults)
+	return results, err
+}
+
+func (c *Client) SearchWithStats(query string, maxResults int) ([]Result, int, error) {
 	if maxResults <= 0 {
-		return []Result{}, nil
+		return []Result{}, 0, nil
 	}
 
 	urls, err := c.fetchURLs(query, 6)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+	pagesFetched := len(urls)
 
 	results := make([]Result, 0, maxResults)
 	seen := make(map[string]struct{})
@@ -56,12 +62,12 @@ func (c *Client) Search(query string, maxResults int) ([]Result, error) {
 			seen[key] = struct{}{}
 			results = append(results, Result{Artist: artist, Title: title})
 			if len(results) >= maxResults {
-				return results[:maxResults], nil
+				return results[:maxResults], pagesFetched, nil
 			}
 		}
 	}
 
-	return results, nil
+	return results, pagesFetched, nil
 }
 
 func (c *Client) fetchURLs(query string, n int) ([]string, error) {

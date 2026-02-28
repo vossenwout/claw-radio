@@ -628,11 +628,11 @@ If query argument is missing, exit 2.
 
 **Acceptance criteria:**
 
-- [ ] Given a running mock SearxNG and `claw-radio search "test query"`, when run, then stdout is a valid JSON array of strings and stderr contains pages fetched and the count
-- [ ] Given stdout output, when parsed as JSON, then each element is in `"Artist - Title"` format
-- [ ] Given SearxNG unreachable (port closed), when `claw-radio search` is called, then it exits 1 and stderr contains "searxng unreachable"
-- [ ] Given no query argument, when `claw-radio search` is called, then it exits 2
-- [ ] Output: `["Britney Spears - Oops! I Did It Again", "NSYNC - Bye Bye Bye"]` on stdout; `"Fetched 1 pages, extracted 2 unique songs."` on stderr
+- [x] Given a running mock SearxNG and `claw-radio search "test query"`, when run, then stdout is a valid JSON array of strings and stderr contains pages fetched and the count
+- [x] Given stdout output, when parsed as JSON, then each element is in `"Artist - Title"` format
+- [x] Given SearxNG unreachable (port closed), when `claw-radio search` is called, then it exits 1 and stderr contains "searxng unreachable"
+- [x] Given no query argument, when `claw-radio search` is called, then it exits 2
+- [x] Output: `["Britney Spears - Oops! I Did It Again", "NSYNC - Bye Bye Bye"]` on stdout; `"Fetched 1 pages, extracted 2 unique songs."` on stderr
 
 ---
 
