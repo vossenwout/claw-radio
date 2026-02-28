@@ -1,0 +1,1 @@
+2026-02-28: Completed T:1 scaffold. Go module initialized (`github.com/vossenwout/claw-radio`) with Cobra dependency, required directory tree and stub files created, and structural acceptance tests added in `project_structure_test.go` (validated with `go mod tidy`, `go test ./...`, `go build ./...`).
