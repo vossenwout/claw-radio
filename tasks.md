@@ -870,8 +870,8 @@ a complete CLI reference for all commands and flags.
 
 **Acceptance criteria:**
 
-- [ ] Installation section includes `brew install vossenwout/tap/claw-radio-cli` for macOS
-- [ ] Installation section includes the `curl` + `tar` command for Linux
-- [ ] Dependency section includes install commands for mpv, yt-dlp, and ffmpeg on both platforms
-- [ ] CLI reference lists all commands: `tts install`, `tts voice add`, `start`, `stop`, `play`, `queue`, `pause`, `resume`, `next`, `seed`, `search`, `say`, `events`, `status`, `version`
-- [ ] Each CLI entry includes its flags and a one-line description
+- [x] Installation section includes `brew install vossenwout/tap/claw-radio-cli` for macOS
+- [x] Installation section includes the `curl` + `tar` command for Linux
+- [x] Dependency section includes install commands for mpv, yt-dlp, and ffmpeg on both platforms
+- [x] CLI reference lists all commands: `tts install`, `tts voice add`, `start`, `stop`, `play`, `queue`, `pause`, `resume`, `next`, `seed`, `search`, `say`, `events`, `status`, `version`
+- [x] Each CLI entry includes its flags and a one-line description
