@@ -161,14 +161,14 @@ Functions:
 
 **Acceptance criteria:**
 
-- [ ] Given `Score(Candidate{Title: "Song (Official Audio)", Duration: 200})`, then result is ≥ 40
-- [ ] Given `Score(Candidate{Title: "Song Live at VMAs", IsLive: true})`, then result is ≤ -100
-- [ ] Given `Score(Candidate{Duration: 60})`, then result includes the -80 short-clip penalty
-- [ ] Given `Score(Candidate{Uploader: "ArtistVEVO", ViewCount: 10_000_000, Duration: 210})`, then result includes the VEVO bonus and the 5M view tier bonus
-- [ ] Given `Score(Candidate{Title: "Song - lyrics nightcore cover", Duration: 200})`, then result includes multiple -30 penalties
-- [ ] Given a mocked yt-dlp that returns JSON for 3 candidates, when `BestCandidate()` is called, then it returns the candidate with the highest score
-- [ ] Given `NormalizeSongKey("Britney Spears - Oops! I Did It Again (Official Audio)")`, then result is `"britney spears - oops i did it again"`
-- [ ] `go test ./internal/ytdlp/...` passes with no yt-dlp installed
+- [x] Given `Score(Candidate{Title: "Song (Official Audio)", Duration: 200})`, then result is ≥ 40
+- [x] Given `Score(Candidate{Title: "Song Live at VMAs", IsLive: true})`, then result is ≤ -100
+- [x] Given `Score(Candidate{Duration: 60})`, then result includes the -80 short-clip penalty
+- [x] Given `Score(Candidate{Uploader: "ArtistVEVO", ViewCount: 10_000_000, Duration: 210})`, then result includes the VEVO bonus and the 5M view tier bonus
+- [x] Given `Score(Candidate{Title: "Song - lyrics nightcore cover", Duration: 200})`, then result includes multiple -30 penalties
+- [x] Given a mocked yt-dlp that returns JSON for 3 candidates, when `BestCandidate()` is called, then it returns the candidate with the highest score
+- [x] Given `NormalizeSongKey("Britney Spears - Oops! I Did It Again (Official Audio)")`, then result is `"britney spears - oops i did it again"`
+- [x] `go test ./internal/ytdlp/...` passes with no yt-dlp installed
 
 ---
 
