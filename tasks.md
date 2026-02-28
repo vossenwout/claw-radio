@@ -208,14 +208,14 @@ subprocess.
 
 **Acceptance criteria:**
 
-- [ ] Given `SetSeeds(["A", "B", "C"], "label")` then `PickSeed()` three times, then results are `"A"`, `"B"`, `"C"` in order
-- [ ] Given `PickSeed()` called more than len(seeds) times, then it wraps around to the beginning
-- [ ] Given `AppendSeeds(["A", "B"])` then `AppendSeeds(["B", "C"])`, then seeds list contains exactly `["A", "B", "C"]` (no duplicate B)
-- [ ] Given `MarkPlayed("vid123", "song key")`, then `AlreadyPlayed("vid123", "other")` returns true
-- [ ] Given `MarkPlayed("vid123", "song key")`, then `AlreadyPlayed("vid999", "song key")` returns true (song-key dedupe)
-- [ ] Given a fresh Load() with no files in stateDir, then both seeds and played lists are empty — no error
-- [ ] Given a Save() followed by a Load() with the same stateDir, then all fields round-trip correctly
-- [ ] `go test ./internal/station/...` passes
+- [x] Given `SetSeeds(["A", "B", "C"], "label")` then `PickSeed()` three times, then results are `"A"`, `"B"`, `"C"` in order
+- [x] Given `PickSeed()` called more than len(seeds) times, then it wraps around to the beginning
+- [x] Given `AppendSeeds(["A", "B"])` then `AppendSeeds(["B", "C"])`, then seeds list contains exactly `["A", "B", "C"]` (no duplicate B)
+- [x] Given `MarkPlayed("vid123", "song key")`, then `AlreadyPlayed("vid123", "other")` returns true
+- [x] Given `MarkPlayed("vid123", "song key")`, then `AlreadyPlayed("vid999", "song key")` returns true (song-key dedupe)
+- [x] Given a fresh Load() with no files in stateDir, then both seeds and played lists are empty — no error
+- [x] Given a Save() followed by a Load() with the same stateDir, then all fields round-trip correctly
+- [x] `go test ./internal/station/...` passes
 
 ---
 
