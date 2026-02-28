@@ -779,10 +779,10 @@ Matches the schema from plan.md section 5 exactly.
 
 **Acceptance criteria:**
 
-- [ ] Given `config.example.json` loaded via `CLAW_RADIO_CONFIG=config.example.json`, when `config.Load()` is called, then it parses without error
-- [ ] All top-level keys are present: `mpv`, `ytdlp`, `ffmpeg`, `tts`, `station`, `search`
-- [ ] All binary fields are set to `""` (empty string, meaning auto-detect)
-- [ ] `station.queue_depth` is `5`, `search.searxng_url` is `"http://localhost:8888"`
+- [x] Given `config.example.json` loaded via `CLAW_RADIO_CONFIG=config.example.json`, when `config.Load()` is called, then it parses without error
+- [x] All top-level keys are present: `mpv`, `ytdlp`, `ffmpeg`, `tts`, `station`, `search`
+- [x] All binary fields are set to `""` (empty string, meaning auto-detect)
+- [x] `station.queue_depth` is `5`, `search.searxng_url` is `"http://localhost:8888"`
 
 ---
 

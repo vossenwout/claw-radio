@@ -1,0 +1,32 @@
+{
+  "mpv": {
+    "socket": "/tmp/claw-radio-mpv.sock",
+    "binary": "",
+    "log": "~/.local/share/claw-radio/mpv.log"
+  },
+  "ytdlp": {
+    "binary": ""
+  },
+  "ffmpeg": {
+    "binary": ""
+  },
+  "tts": {
+    "socket": "/tmp/claw-radio-tts.sock",
+    "data_dir": "~/.local/share/claw-radio",
+    "fallback_binary": "",
+    "voices": {
+      "pop": "",
+      "country": "",
+      "electronic": "",
+      "default": ""
+    }
+  },
+  "station": {
+    "queue_depth": 5,
+    "cache_dir": "~/.local/share/claw-radio/cache",
+    "state_dir": "~/.local/share/claw-radio/state"
+  },
+  "search": {
+    "searxng_url": "http://localhost:8888"
+  }
+}
