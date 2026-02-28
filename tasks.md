@@ -801,9 +801,9 @@ Steps:
 
 **Acceptance criteria:**
 
-- [ ] Given correctly formatted code pushed to main, then the CI workflow passes all steps
-- [ ] Given a file with incorrect gofmt formatting committed, then the format check step fails
-- [ ] Given `go test ./...` runs in CI, then it passes with zero external tools installed (all tests mock their dependencies)
+- [x] Given correctly formatted code pushed to main, then the CI workflow passes all steps
+- [x] Given a file with incorrect gofmt formatting committed, then the format check step fails
+- [x] Given `go test ./...` runs in CI, then it passes with zero external tools installed (all tests mock their dependencies)
 
 ---
 

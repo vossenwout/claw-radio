@@ -31,7 +31,17 @@ type configExampleFile struct {
 
 func TestConfigExampleLoadsViaEnvPath(t *testing.T) {
 	repoRoot := testRepoRoot(t)
-	t.Chdir(repoRoot)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() failed: %v", err)
+	}
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("Chdir(%q) failed: %v", repoRoot, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(cwd)
+	})
+
 	t.Setenv("CLAW_RADIO_CONFIG", "config.example.json")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", t.TempDir())

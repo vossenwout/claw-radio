@@ -221,7 +221,7 @@ func TestEventsJSONFlushesEachLineImmediately(t *testing.T) {
 		_ = stdoutW.Close()
 	}()
 
-	go server.emit(t, map[string]interface{}{"event": "file-loaded"})
+	server.emit(t, map[string]interface{}{"event": "file-loaded"})
 
 	lineCh := make(chan string, 1)
 	readErrCh := make(chan error, 1)

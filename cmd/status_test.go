@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
@@ -206,7 +205,7 @@ func TestStatusJSONMatchesSchema(t *testing.T) {
 	}
 	data, _ := json.Marshal(map[string]interface{}{
 		"label": "Night Drive",
-		"seeds": slices.Repeat([]string{"A - B"}, 48),
+		"seeds": repeatedStringSlice("A - B", 48),
 	})
 	if err := os.WriteFile(filepath.Join(stateDir, "station.json"), data, 0o644); err != nil {
 		t.Fatalf("write station.json: %v", err)
@@ -273,6 +272,14 @@ func TestStatusJSONMatchesSchema(t *testing.T) {
 	if out.Playback == nil || out.Playback.State == "" || out.Playback.Title == "" {
 		t.Fatalf("unexpected playback payload: %#v", out.Playback)
 	}
+}
+
+func repeatedStringSlice(value string, count int) []string {
+	out := make([]string, count)
+	for i := range out {
+		out[i] = value
+	}
+	return out
 }
 
 type statusOutputForTest struct {
