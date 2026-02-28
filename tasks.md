@@ -570,13 +570,13 @@ current track and skips to it.
 
 **Acceptance criteria:**
 
-- [ ] Given mpv is not running, when any playback command is run, then it exits 5 with a message suggesting `claw-radio start`
-- [ ] Given a valid query `"Daft Punk - Get Lucky"`, when `claw-radio play` is called, then `InsertNext` and `playlist-next` are called in sequence (verify via mock mpv socket)
-- [ ] Given a direct URL, when `claw-radio queue` is called, then `YtDlpProvider.Resolve()` is invoked with the URL and the resolved file is appended
-- [ ] Given a valid query, when `claw-radio queue` is called, then `LoadFile(path, "append")` is called
-- [ ] Given mpv is running, when `claw-radio pause` is called, then `set_property pause true` is sent
-- [ ] Given mpv is running, when `claw-radio resume` is called, then `set_property pause false` is sent
-- [ ] Given mpv is running, when `claw-radio next` is called, then `playlist-next` command is sent
+- [x] Given mpv is not running, when any playback command is run, then it exits 5 with a message suggesting `claw-radio start`
+- [x] Given a valid query `"Daft Punk - Get Lucky"`, when `claw-radio play` is called, then `InsertNext` and `playlist-next` are called in sequence (verify via mock mpv socket)
+- [x] Given a direct URL, when `claw-radio queue` is called, then `YtDlpProvider.Resolve()` is invoked with the URL and the resolved file is appended
+- [x] Given a valid query, when `claw-radio queue` is called, then `LoadFile(path, "append")` is called
+- [x] Given mpv is running, when `claw-radio pause` is called, then `set_property pause true` is sent
+- [x] Given mpv is running, when `claw-radio resume` is called, then `set_property pause false` is sent
+- [x] Given mpv is running, when `claw-radio next` is called, then `playlist-next` command is sent
 
 ---
 
