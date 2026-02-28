@@ -536,13 +536,13 @@ Implement `cmd/start.go` and `cmd/stop.go` as specified in plan.md section 7.12
 
 **Acceptance criteria:**
 
-- [ ] Given mpv is not on PATH, when `claw-radio start` is run, then it exits 4 and the error message contains "brew install mpv" and "apt install mpv"
-- [ ] Given yt-dlp is not on PATH, when `claw-radio start` is run, then it exits 4 with yt-dlp install instructions
-- [ ] Given stale PID files exist, when `claw-radio start` runs, then it still starts mpv/controller and replaces the PID files
-- [ ] Given start completes successfully, then `/tmp/claw-radio-mpv.pid` and `/tmp/claw-radio-controller.pid` exist with valid PIDs
-- [ ] Given start completes successfully, when `claw-radio stop` is run, then the PID files are removed and processes are terminated
-- [ ] Given no PID files exist, when `claw-radio stop` is run, then it exits 0 without error
-- [ ] Given mpv IPC socket doesn't appear within 5 seconds, when `claw-radio start` is run, then it exits 1 with a timeout error
+- [x] Given mpv is not on PATH, when `claw-radio start` is run, then it exits 4 and the error message contains "brew install mpv" and "apt install mpv"
+- [x] Given yt-dlp is not on PATH, when `claw-radio start` is run, then it exits 4 with yt-dlp install instructions
+- [x] Given stale PID files exist, when `claw-radio start` runs, then it still starts mpv/controller and replaces the PID files
+- [x] Given start completes successfully, then `/tmp/claw-radio-mpv.pid` and `/tmp/claw-radio-controller.pid` exist with valid PIDs
+- [x] Given start completes successfully, when `claw-radio stop` is run, then the PID files are removed and processes are terminated
+- [x] Given no PID files exist, when `claw-radio stop` is run, then it exits 0 without error
+- [x] Given mpv IPC socket doesn't appear within 5 seconds, when `claw-radio start` is run, then it exits 1 with a timeout error
 
 ---
 
