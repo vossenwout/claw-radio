@@ -661,13 +661,13 @@ If TTS unavailable → exit 4.
 
 **Acceptance criteria:**
 
-- [ ] Given mpv not running, when `claw-radio say "hello"` is called, then it exits 5
-- [ ] Given TTS unavailable and mpv running, when `claw-radio say "hello"` is called, then it exits 4
-- [ ] Given `--voice pop` and `data_dir/voices/pop.wav` exists, when `say` is called, then `tts.Render` receives `data_dir/voices/pop.wav` as the voice path
-- [ ] Given `--voice /absolute/path/voice.wav` and that file exists, when `say` is called, then `tts.Render` receives that literal path
-- [ ] Given `--voice unknown` and no file by that name, when `say` is called, then `tts.Render` receives empty string (Chatterbox default voice)
-- [ ] Given successful render and InsertNext, when `say` completes, then it prints "queued banter" and exits 0
-- [ ] Given no text argument, when `claw-radio say` is called, then it exits 2
+- [x] Given mpv not running, when `claw-radio say "hello"` is called, then it exits 5
+- [x] Given TTS unavailable and mpv running, when `claw-radio say "hello"` is called, then it exits 4
+- [x] Given `--voice pop` and `data_dir/voices/pop.wav` exists, when `say` is called, then `tts.Render` receives `data_dir/voices/pop.wav` as the voice path
+- [x] Given `--voice /absolute/path/voice.wav` and that file exists, when `say` is called, then `tts.Render` receives that literal path
+- [x] Given `--voice unknown` and no file by that name, when `say` is called, then `tts.Render` receives empty string (Chatterbox default voice)
+- [x] Given successful render and InsertNext, when `say` completes, then it prints "queued banter" and exits 0
+- [x] Given no text argument, when `claw-radio say` is called, then it exits 2
 
 ---
 
