@@ -459,10 +459,10 @@ Verify that `tts/daemon.py` content is readable from the embedded FS at build ti
 
 **Acceptance criteria:**
 
-- [ ] Given `go build ./...`, then it succeeds — the embed compiles without errors
-- [ ] Given a test that calls `ttsFS.ReadFile("tts/daemon.py")`, then it returns non-empty content
-- [ ] Given a test that calls `ttsFS.ReadFile("tts/voices/pop.wav")`, then it returns a valid WAV header (first 4 bytes = `RIFF`)
-- [ ] `tts/voices/README.md` exists and explains the default nature of the files and how to replace them
+- [x] Given `go build ./...`, then it succeeds — the embed compiles without errors
+- [x] Given a test that calls `ttsFS.ReadFile("tts/daemon.py")`, then it returns non-empty content
+- [x] Given a test that calls `ttsFS.ReadFile("tts/voices/pop.wav")`, then it returns a valid WAV header (first 4 bytes = `RIFF`)
+- [x] `tts/voices/README.md` exists and explains the default nature of the files and how to replace them
 
 ---
 
