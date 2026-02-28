@@ -342,13 +342,13 @@ Tests use `httptest.NewServer` to mock both SearxNG and result pages.
 
 **Acceptance criteria:**
 
-- [ ] Given a mock SearxNG server returning 3 URLs, when `Search("test", 150)` is called, then `fetchURLs` returns those 3 URLs
-- [ ] Given mock result pages where Wikipedia returns 50 results and Discogs returns 10, when `Search()` is called, then results are deduplicated and capped at maxResults
-- [ ] Given the same artist-title pair returned by two different pages, when `Search()` returns, then the pair appears exactly once
-- [ ] Given SearxNG returns HTTP 500, when `Search()` is called, then it returns an error containing "searxng unreachable"
-- [ ] Given a result page returns HTTP 404, when `Search()` is called, then it skips that page silently and returns results from the others
-- [ ] Given a URL containing "wikipedia.org", when `fetchAndExtract()` dispatches, then it calls `Wikitable()`; same for "discogs.com" → `Discogs()`, "musicbrainz.org" → `MusicBrainz()`, other → `Generic()`
-- [ ] `go test ./internal/search/...` passes
+- [x] Given a mock SearxNG server returning 3 URLs, when `Search("test", 150)` is called, then `fetchURLs` returns those 3 URLs
+- [x] Given mock result pages where Wikipedia returns 50 results and Discogs returns 10, when `Search()` is called, then results are deduplicated and capped at maxResults
+- [x] Given the same artist-title pair returned by two different pages, when `Search()` returns, then the pair appears exactly once
+- [x] Given SearxNG returns HTTP 500, when `Search()` is called, then it returns an error containing "searxng unreachable"
+- [x] Given a result page returns HTTP 404, when `Search()` is called, then it skips that page silently and returns results from the others
+- [x] Given a URL containing "wikipedia.org", when `fetchAndExtract()` dispatches, then it calls `Wikitable()`; same for "discogs.com" → `Discogs()`, "musicbrainz.org" → `MusicBrainz()`, other → `Generic()`
+- [x] `go test ./internal/search/...` passes
 
 ---
 
