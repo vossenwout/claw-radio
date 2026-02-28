@@ -301,15 +301,15 @@ Filter results containing noise keywords: "lyrics", "karaoke", "nightcore",
 
 **Acceptance criteria:**
 
-- [ ] Given a saved Wikipedia "Billboard Year-End Hot 100" HTML fixture with a wikitable, when `Wikitable()` is called, then it returns the correct artist-title pairs for at least 80% of the rows
-- [ ] Given a saved Discogs compilation tracklist HTML fixture, when `Discogs()` is called, then it returns the correct artist-title pairs for all tracks
-- [ ] Given a saved MusicBrainz release page HTML fixture, when `MusicBrainz()` is called, then it returns the correct titles with the release artist
-- [ ] Given `Generic("The Beatles - Hey Jude")`, then it returns `Result{Artist:"The Beatles", Title:"Hey Jude"}`
-- [ ] Given `Generic("Shape of You by Ed Sheeran")`, then it returns `Result{Artist:"Ed Sheeran", Title:"Shape of You"}`
-- [ ] Given `Generic("The Beatles – Hey Jude")` (em-dash), then it returns `Result{Artist:"The Beatles", Title:"Hey Jude"}`
-- [ ] Given `Generic("some song lyrics karaoke nightcore")`, then it returns an empty slice (noise filtered)
-- [ ] Given `Generic("3:45 - 4:12")`, then it returns an empty slice (timestamp not matched as song)
-- [ ] `go test ./internal/search/... -run TestExtract` passes
+- [x] Given a saved Wikipedia "Billboard Year-End Hot 100" HTML fixture with a wikitable, when `Wikitable()` is called, then it returns the correct artist-title pairs for at least 80% of the rows
+- [x] Given a saved Discogs compilation tracklist HTML fixture, when `Discogs()` is called, then it returns the correct artist-title pairs for all tracks
+- [x] Given a saved MusicBrainz release page HTML fixture, when `MusicBrainz()` is called, then it returns the correct titles with the release artist
+- [x] Given `Generic("The Beatles - Hey Jude")`, then it returns `Result{Artist:"The Beatles", Title:"Hey Jude"}`
+- [x] Given `Generic("Shape of You by Ed Sheeran")`, then it returns `Result{Artist:"Ed Sheeran", Title:"Shape of You"}`
+- [x] Given `Generic("The Beatles – Hey Jude")` (em-dash), then it returns `Result{Artist:"The Beatles", Title:"Hey Jude"}`
+- [x] Given `Generic("some song lyrics karaoke nightcore")`, then it returns an empty slice (noise filtered)
+- [x] Given `Generic("3:45 - 4:12")`, then it returns an empty slice (timestamp not matched as song)
+- [x] `go test ./internal/search/... -run TestExtract` passes
 
 ---
 
