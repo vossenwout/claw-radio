@@ -13,6 +13,7 @@ var osArgs = os.Args
 
 func main() {
 	cmd.SetVersion(version)
+	cmd.SetEmbeddedTTSFS(ttsFS)
 	os.Args = osArgs
 
 	err := execute()

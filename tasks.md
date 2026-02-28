@@ -697,13 +697,13 @@ in plan.md section 7.7.
 
 **Acceptance criteria:**
 
-- [ ] Given python3 not on PATH, when `tts install` is run, then it exits 4 with a python3 install message
-- [ ] Given python3 available (mocked), when `tts install` completes, then `data_dir/daemon.py` exists with the correct content from the embedded FS
-- [ ] Given `tts install` completes, then `data_dir/voices/pop.wav` exists (extracted from embed)
-- [ ] Given yt-dlp not on PATH, when `tts voice add` is run, then it exits 4
-- [ ] Given ffmpeg not on PATH, when `tts voice add` is run, then it exits 4 with ffmpeg install instructions
-- [ ] Given a mocked yt-dlp that downloads a WAV and mocked ffmpeg, when `tts voice add <url> --name country` is called, then `data_dir/voices/country.wav` exists and prints the confirmation message
-- [ ] Given no URL argument, when `tts voice add` is called, then it exits 2
+- [x] Given python3 not on PATH, when `tts install` is run, then it exits 4 with a python3 install message
+- [x] Given python3 available (mocked), when `tts install` completes, then `data_dir/daemon.py` exists with the correct content from the embedded FS
+- [x] Given `tts install` completes, then `data_dir/voices/pop.wav` exists (extracted from embed)
+- [x] Given yt-dlp not on PATH, when `tts voice add` is run, then it exits 4
+- [x] Given ffmpeg not on PATH, when `tts voice add` is run, then it exits 4 with ffmpeg install instructions
+- [x] Given a mocked yt-dlp that downloads a WAV and mocked ffmpeg, when `tts voice add <url> --name country` is called, then `data_dir/voices/country.wav` exists and prints the confirmation message
+- [x] Given no URL argument, when `tts voice add` is called, then it exits 2
 
 ---
 
