@@ -379,13 +379,13 @@ All subprocess calls use a package-level `var execCommand = exec.Command`.
 
 **Acceptance criteria:**
 
-- [ ] Given a mock daemon socket that returns `{"status": "ok"}`, when `Render()` is called, then it returns nil and does not fall through to layer 2
-- [ ] Given a connection refused on the daemon socket and a venv present, when `Render()` is called, then it falls through to layer 2 (one-shot)
-- [ ] Given connection refused and no venv, when `Render()` is called, then it falls through to layer 3 (system TTS)
-- [ ] Given connection refused, no venv, and `FallbackBinary == ""`, when `Render()` is called, then it returns an error containing "No TTS binary found"
-- [ ] Given a non-empty `voicePath` and warm daemon, when `Render()` is called, then the request JSON includes `"voice_prompt": <path>`
-- [ ] Given an empty `voicePath` and warm daemon, when `Render()` is called, then the request JSON does NOT include a `voice_prompt` field
-- [ ] `go test ./internal/tts/...` passes
+- [x] Given a mock daemon socket that returns `{"status": "ok"}`, when `Render()` is called, then it returns nil and does not fall through to layer 2
+- [x] Given a connection refused on the daemon socket and a venv present, when `Render()` is called, then it falls through to layer 2 (one-shot)
+- [x] Given connection refused and no venv, when `Render()` is called, then it falls through to layer 3 (system TTS)
+- [x] Given connection refused, no venv, and `FallbackBinary == ""`, when `Render()` is called, then it returns an error containing "No TTS binary found"
+- [x] Given a non-empty `voicePath` and warm daemon, when `Render()` is called, then the request JSON includes `"voice_prompt": <path>`
+- [x] Given an empty `voicePath` and warm daemon, when `Render()` is called, then the request JSON does NOT include a `voice_prompt` field
+- [x] `go test ./internal/tts/...` passes
 
 ---
 
