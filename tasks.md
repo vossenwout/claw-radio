@@ -759,12 +759,12 @@ Without `--json`: print the same info in human-readable format.
 
 **Acceptance criteria:**
 
-- [ ] Given mpv not running, when `status --json` is called, then `"engine": "stopped"` in output and it exits 0 (not an error)
-- [ ] Given mpv running and a mock IPC, when `status --json` is called, then output is valid JSON containing `"engine": "running"` and `"playback"` with title/volume/state fields
-- [ ] Given `station.json` exists with 48 seeds, when `status --json` is called, then output contains `"station": {"seeds": 48}`
-- [ ] Given TTS daemon socket responding, when `status --json` is called, then `"tts": "warm"`
-- [ ] Given no TTS socket but FallbackBinary set, when `status --json` is called, then `"tts": "system"`
-- [ ] Output matches schema: `{"engine":"running","station":{"label":"...","seeds":48},"playback":{...},"queue":{...},"controller":"running","tts":"warm"}`
+- [x] Given mpv not running, when `status --json` is called, then `"engine": "stopped"` in output and it exits 0 (not an error)
+- [x] Given mpv running and a mock IPC, when `status --json` is called, then output is valid JSON containing `"engine": "running"` and `"playback"` with title/volume/state fields
+- [x] Given `station.json` exists with 48 seeds, when `status --json` is called, then output contains `"station": {"seeds": 48}`
+- [x] Given TTS daemon socket responding, when `status --json` is called, then `"tts": "warm"`
+- [x] Given no TTS socket but FallbackBinary set, when `status --json` is called, then `"tts": "system"`
+- [x] Output matches schema: `{"engine":"running","station":{"label":"...","seeds":48},"playback":{...},"queue":{...},"controller":"running","tts":"warm"}`
 
 ---
 
