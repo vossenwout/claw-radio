@@ -52,8 +52,8 @@ func TestMainGoStubExists(t *testing.T) {
 	if !strings.Contains(content, "package main") {
 		t.Fatalf("main.go must contain package main")
 	}
-	if !strings.Contains(content, "func main() {}") {
-		t.Fatalf("main.go must contain stub func main() {}")
+	if !strings.Contains(content, "func main()") {
+		t.Fatalf("main.go must contain func main()")
 	}
 }
 

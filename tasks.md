@@ -489,10 +489,10 @@ subcommands. Inject version at build time via `-ldflags "-X main.version=<v>"`.
 
 **Acceptance criteria:**
 
-- [ ] Given no arguments, when `claw-radio` is run, then it prints help text and exits 0
-- [ ] Given `claw-radio version`, then it prints a version string (e.g. `claw-radio dev` when no ldflags set) and exits 0
-- [ ] Given a command returns `exitCode(err, 5)`, then the process exits with code 5
-- [ ] Given an unknown subcommand, when `claw-radio foobar` is run, then it exits 2 (cobra default for bad usage)
+- [x] Given no arguments, when `claw-radio` is run, then it prints help text and exits 0
+- [x] Given `claw-radio version`, then it prints a version string (e.g. `claw-radio dev` when no ldflags set) and exits 0
+- [x] Given a command returns `exitCode(err, 5)`, then the process exits with code 5
+- [x] Given an unknown subcommand, when `claw-radio foobar` is run, then it exits 2 (cobra default for bad usage)
 
 ---
 
