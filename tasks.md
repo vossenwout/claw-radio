@@ -247,13 +247,13 @@ no separate mock needed here; use the ytdlp package's test helpers.
 
 **Acceptance criteria:**
 
-- [ ] Given a mocked yt-dlp that returns a candidate with ID `"abc123"` and the file `cacheDir/abc123.opus` already exists, when `YtDlpProvider.Resolve()` is called, then it returns the cached path without calling Download
-- [ ] Given a mocked yt-dlp that returns a candidate with ID `"abc123"` and no cached file exists, when `YtDlpProvider.Resolve()` is called, then it calls Download and returns the downloaded path
-- [ ] Given `seed` is a direct URL, when `YtDlpProvider.Resolve()` is called, then it calls `Download` directly (no `BestCandidate` search)
-- [ ] Given `SpotifyProvider.Resolve()`, then it returns an error containing "not implemented"
-- [ ] Given `AppleMusicProvider.Resolve()`, then it returns an error containing "not implemented"
-- [ ] Given `YtDlpProvider.Name()`, then it returns `"youtube"`
-- [ ] `go test ./internal/provider/...` passes
+- [x] Given a mocked yt-dlp that returns a candidate with ID `"abc123"` and the file `cacheDir/abc123.opus` already exists, when `YtDlpProvider.Resolve()` is called, then it returns the cached path without calling Download
+- [x] Given a mocked yt-dlp that returns a candidate with ID `"abc123"` and no cached file exists, when `YtDlpProvider.Resolve()` is called, then it calls Download and returns the downloaded path
+- [x] Given `seed` is a direct URL, when `YtDlpProvider.Resolve()` is called, then it calls `Download` directly (no `BestCandidate` search)
+- [x] Given `SpotifyProvider.Resolve()`, then it returns an error containing "not implemented"
+- [x] Given `AppleMusicProvider.Resolve()`, then it returns an error containing "not implemented"
+- [x] Given `YtDlpProvider.Name()`, then it returns `"youtube"`
+- [x] `go test ./internal/provider/...` passes
 
 ---
 
