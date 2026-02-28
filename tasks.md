@@ -426,12 +426,12 @@ Loads model, generates once, saves, exits. For use when the daemon is not warm.
 
 **Acceptance criteria:**
 
-- [ ] Given daemon mode and a request without `voice_prompt`, when the request is processed, then `model.generate(text)` is called and the output file is written
-- [ ] Given daemon mode and a request with `voice_prompt`, when the request is processed, then `model.generate(text, audio_prompt_path=...)` is called
-- [ ] Given an invalid `out_path`, when the request is processed, then the response contains `{"error": "..."}` and the daemon continues accepting new connections
-- [ ] Given `--one-shot "Hello" /tmp/out.wav`, when run, then the file `/tmp/out.wav` is created and the process exits 0
-- [ ] Given `--one-shot "Hello" /tmp/out.wav --voice /tmp/voice.wav`, when run, then voice cloning is used
-- [ ] Given SIGTERM in daemon mode, when the signal arrives, then the process exits cleanly without traceback
+- [x] Given daemon mode and a request without `voice_prompt`, when the request is processed, then `model.generate(text)` is called and the output file is written
+- [x] Given daemon mode and a request with `voice_prompt`, when the request is processed, then `model.generate(text, audio_prompt_path=...)` is called
+- [x] Given an invalid `out_path`, when the request is processed, then the response contains `{"error": "..."}` and the daemon continues accepting new connections
+- [x] Given `--one-shot "Hello" /tmp/out.wav`, when run, then the file `/tmp/out.wav` is created and the process exits 0
+- [x] Given `--one-shot "Hello" /tmp/out.wav --voice /tmp/voice.wav`, when run, then voice cloning is used
+- [x] Given SIGTERM in daemon mode, when the signal arrives, then the process exits cleanly without traceback
 
 ---
 
