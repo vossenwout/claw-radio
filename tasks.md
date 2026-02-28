@@ -601,13 +601,13 @@ Saves station state after modification.
 
 **Acceptance criteria:**
 
-- [ ] Given a valid JSON array `'["A - B", "C - D"]'`, when `seed` is called, then `station.json` contains those two seeds
-- [ ] Given `--label "2000s pop"`, when `seed` is called, then `station.json` has `"label": "2000s pop"`
-- [ ] Given an existing seed list of 5 and `seed '["X - Y"]' --append`, when run, then total seeds is 6
-- [ ] Given `--append` and a seed already in the list, when run, then the seed appears only once (deduplication)
-- [ ] Given invalid JSON `'not-json'`, when `seed` is called, then it exits 1 with a parse error message
-- [ ] Given a JSON number instead of array `'42'`, when `seed` is called, then it exits 1
-- [ ] Given no argument, when `claw-radio seed` is called, then it exits 2 with usage help
+- [x] Given a valid JSON array `'["A - B", "C - D"]'`, when `seed` is called, then `station.json` contains those two seeds
+- [x] Given `--label "2000s pop"`, when `seed` is called, then `station.json` has `"label": "2000s pop"`
+- [x] Given an existing seed list of 5 and `seed '["X - Y"]' --append`, when run, then total seeds is 6
+- [x] Given `--append` and a seed already in the list, when run, then the seed appears only once (deduplication)
+- [x] Given invalid JSON `'not-json'`, when `seed` is called, then it exits 1 with a parse error message
+- [x] Given a JSON number instead of array `'42'`, when `seed` is called, then it exits 1
+- [x] Given no argument, when `claw-radio seed` is called, then it exits 2 with usage help
 
 ---
 
