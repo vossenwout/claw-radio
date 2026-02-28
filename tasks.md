@@ -829,10 +829,10 @@ add `HOMEBREW_TAP_GITHUB_TOKEN` as a repository secret on the claw-radio repo.
 
 **Acceptance criteria:**
 
-- [ ] Given the `.goreleaser.yaml`, when `goreleaser check` is run locally, then it reports no errors
-- [ ] The `homebrew_casks` section references `vossenwout/homebrew-tap` and binary `claw-radio`
-- [ ] Given a `v*` tag is pushed, then the release workflow triggers and a GitHub Release is created
-- [ ] Given the release completes, then `Casks/claw-radio-cli.rb` is created or updated in `vossenwout/homebrew-tap`
+- [x] Given the `.goreleaser.yaml`, when `goreleaser check` is run locally, then it reports no errors
+- [x] The `homebrew_casks` section references `vossenwout/homebrew-tap` and binary `claw-radio`
+- [x] Given a `v*` tag is pushed, then the release workflow triggers and a GitHub Release is created
+- [x] Given the release completes, then `Casks/claw-radio-cli.rb` is created or updated in `vossenwout/homebrew-tap`
 
 ---
 

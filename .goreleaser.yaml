@@ -1,0 +1,55 @@
+version: 2
+
+project_name: claw-radio
+
+changelog:
+  disable: true
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    targets:
+      - darwin_amd64
+      - darwin_arm64
+      - linux_amd64
+      - linux_arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    binary: claw-radio
+
+universal_binaries:
+  - replace: true
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - config.example.json
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+homebrew_casks:
+  - name: claw-radio-cli
+    binaries:
+      - claw-radio
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/claw-radio"]
+          end
+    repository:
+      owner: vossenwout
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/vossenwout/claw-radio
+    description: "GTA-style AI radio station CLI - operated by an AI agent"
+    caveats: |
+      Install required tools:
+        brew install mpv yt-dlp ffmpeg
+
+      Optional (high-quality TTS voice):
+        claw-radio tts install
