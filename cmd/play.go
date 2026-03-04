@@ -8,7 +8,7 @@ import (
 	"github.com/vossenwout/claw-radio/internal/mpv"
 )
 
-const mpvNotRunningMessage = "mpv not running. Start with: claw-radio start"
+const mpvNotRunningMessage = "radio is not running. Start with: claw-radio start"
 
 type playbackClient interface {
 	Close() error

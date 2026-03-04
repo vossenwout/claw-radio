@@ -38,12 +38,12 @@ var invalidVoiceNameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 var ttsCmd = &cobra.Command{
 	Use:   "tts",
-	Short: "Install and manage TTS voices",
+	Short: "Set up and manage radio voices",
 }
 
 var ttsInstallCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install Chatterbox TTS into the data directory",
+	Short: "Set up voice generation for say",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTTSInstall(cmd)
@@ -52,12 +52,12 @@ var ttsInstallCmd = &cobra.Command{
 
 var ttsVoiceCmd = &cobra.Command{
 	Use:   "voice",
-	Short: "Manage voice prompt files",
+	Short: "Manage saved voice samples",
 }
 
 var ttsVoiceAddCmd = &cobra.Command{
 	Use:   "add <url>",
-	Short: "Download and store a voice prompt WAV",
+	Short: "Save a new voice sample from a URL",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTTSVoiceAdd(cmd, args[0])

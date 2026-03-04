@@ -26,7 +26,7 @@ func TestPollReturnsTimeoutEvent(t *testing.T) {
 	}
 	defer func() { loadConfigFn = origLoad }()
 
-	err, stdout, _ := executeCommandWithOutputForTest("poll", "--json", "--timeout", "30ms")
+	err, stdout, _ := executeCommandWithOutputForTest("poll", "--timeout", "30ms")
 	if err != nil {
 		t.Fatalf("poll failed: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPollReturnsQueuedEvent(t *testing.T) {
 	}
 	defer func() { loadConfigFn = origLoad }()
 
-	err, stdout, _ := executeCommandWithOutputForTest("poll", "--json", "--timeout", "1s")
+	err, stdout, _ := executeCommandWithOutputForTest("poll", "--timeout", "1s")
 	if err != nil {
 		t.Fatalf("poll failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestPollReturnsQueuedEvent(t *testing.T) {
 	}
 }
 
-func TestPollNonJSONHumanOutput(t *testing.T) {
+func TestPollReturnsBanterNeededJSONPayload(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{Station: config.StationConfig{StateDir: stateDir}}
 	restoreRuntime := withRunningRuntimeForPollTests(t)
@@ -92,12 +92,15 @@ func TestPollNonJSONHumanOutput(t *testing.T) {
 	}
 	defer func() { loadConfigFn = origLoad }()
 
-	err, stdout, _ := executeCommandWithOutputForTest("poll", "--json=false", "--timeout", (50 * time.Millisecond).String())
+	err, stdout, _ := executeCommandWithOutputForTest("poll", "--timeout", (50 * time.Millisecond).String())
 	if err != nil {
 		t.Fatalf("poll failed: %v", err)
 	}
-	if !strings.Contains(stdout, "banter_needed: SZA - Saturn") {
-		t.Fatalf("stdout = %q, want human banter event", stdout)
+	if !strings.Contains(stdout, "\"event\":\"banter_needed\"") {
+		t.Fatalf("stdout = %q, want banter_needed json event", stdout)
+	}
+	if !strings.Contains(stdout, "\"artist\":\"SZA\"") || !strings.Contains(stdout, "\"title\":\"Saturn\"") {
+		t.Fatalf("stdout = %q, want next_song details", stdout)
 	}
 }
 
@@ -120,7 +123,7 @@ func TestPollReturnsEngineStoppedWhenRadioNotRunning(t *testing.T) {
 	statusProcessRunningFn = func(int) bool { return false }
 	defer func() { statusProcessRunningFn = origRunning }()
 
-	err, stdout, _ := executeCommandWithOutputForTest("poll", "--json", "--timeout", "1s")
+	err, stdout, _ := executeCommandWithOutputForTest("poll", "--timeout", "1s")
 	if err != nil {
 		t.Fatalf("poll failed: %v", err)
 	}

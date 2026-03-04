@@ -115,6 +115,40 @@ func TestStartWritesPIDFilesOnSuccess(t *testing.T) {
 	h.cleanup()
 }
 
+func TestStartWhenAlreadyRunningPrintsNoOpMessage(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := baseEngineTestConfig(tmp)
+
+	mpvProc := spawnSleepProcess(t)
+	controllerProc := spawnSleepProcess(t)
+	if err := os.WriteFile(filepath.Join(tmp, mpvPIDFileName), []byte(fmt.Sprintf("%d\n", mpvProc.Pid)), 0o644); err != nil {
+		t.Fatalf("write mpv pid: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, controllerPIDFile), []byte(fmt.Sprintf("%d\n", controllerProc.Pid)), 0o644); err != nil {
+		t.Fatalf("write controller pid: %v", err)
+	}
+
+	restore := withEngineTestHooks(cfg, tmp)
+	defer restore()
+
+	called := false
+	startProcessFn = func(string, []string, *os.File, *os.File) (*os.Process, error) {
+		called = true
+		return nil, fmt.Errorf("should not start process when already running")
+	}
+
+	err, stdout, _ := executeCommandWithOutputForTest("start")
+	if err != nil {
+		t.Fatalf("start command failed: %v", err)
+	}
+	if called {
+		t.Fatal("start process was called for already-running radio")
+	}
+	if !strings.Contains(stdout, "already running") {
+		t.Fatalf("stdout = %q, want already-running message", stdout)
+	}
+}
+
 func TestStopAfterStartRemovesPIDsAndTerminatesProcesses(t *testing.T) {
 	tmp := t.TempDir()
 	cfg := baseEngineTestConfig(tmp)
@@ -159,6 +193,22 @@ func TestStopWithoutPIDFilesSucceeds(t *testing.T) {
 
 	if err := executeCommandForTest(t, "stop"); err != nil {
 		t.Fatalf("stop command with no pid files failed: %v", err)
+	}
+}
+
+func TestStopWhenAlreadyStoppedPrintsNoOpMessage(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := baseEngineTestConfig(tmp)
+
+	restore := withEngineTestHooks(cfg, tmp)
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("stop")
+	if err != nil {
+		t.Fatalf("stop command failed: %v", err)
+	}
+	if !strings.Contains(stdout, "already stopped") {
+		t.Fatalf("stdout = %q, want already-stopped message", stdout)
 	}
 }
 

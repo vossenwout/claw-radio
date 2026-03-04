@@ -37,6 +37,7 @@ var (
 	sendMPVQuitFn     = sendMPVQuit
 	filepathGlobFn    = filepath.Glob
 	removeFileFn      = os.Remove
+	removeAllFn       = os.RemoveAll
 	readFileFn        = os.ReadFile
 	writeFileFn       = os.WriteFile
 	mkdirAllFn        = os.MkdirAll
@@ -48,7 +49,8 @@ var (
 
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start mpv engine and station controller",
+	Short: "Start the radio show",
+	Long:  "Start your radio session and begin playback. If the radio is already running, this command keeps it as-is.",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runStart(cmd)
@@ -66,6 +68,13 @@ func runStart(cmd *cobra.Command) error {
 	}
 	if strings.TrimSpace(cfg.YtDlp.Binary) == "" {
 		return exitCode(errors.New(ytdlpMissingMessage), 4)
+	}
+
+	mpvRunning := pidFileRunning(pidFilePath(mpvPIDFileName))
+	controllerRunning := pidFileRunning(pidFilePath(controllerPIDFile))
+	if mpvRunning && controllerRunning {
+		fmt.Fprintln(cmd.OutOrStdout(), "radio is already running")
+		return nil
 	}
 
 	_ = sendMPVQuitFn(cfg.MPV.Socket)
@@ -142,7 +151,7 @@ func runStart(cmd *cobra.Command) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "claw-radio started")
+	fmt.Fprintln(cmd.OutOrStdout(), "radio started")
 	return nil
 }
 

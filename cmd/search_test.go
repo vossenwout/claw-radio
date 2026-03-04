@@ -65,7 +65,7 @@ func TestSearchCommandOutputsJSONAndStatsLine(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(stderr, "Fetched 1 pages, extracted 2 unique songs.") {
+	if !strings.Contains(stderr, "Found 2 song candidates from 1 pages.") {
 		t.Fatalf("stderr missing fetch summary, got: %q", stderr)
 	}
 }
@@ -86,8 +86,8 @@ func TestSearchCommandSearxUnreachableExitsOne(t *testing.T) {
 
 	execErr, _, stderr := executeCommandWithOutputForTest("search", "test query")
 	assertExitCode(t, execErr, 1)
-	if !strings.Contains(strings.ToLower(stderr), "searxng unreachable") {
-		t.Fatalf("stderr = %q, want contains %q", stderr, "searxng unreachable")
+	if !strings.Contains(stderr, "could not reach SearxNG") {
+		t.Fatalf("stderr = %q, want contains %q", stderr, "could not reach SearxNG")
 	}
 }
 
@@ -100,6 +100,9 @@ func TestSearchCommandWithoutQueryExitsTwo(t *testing.T) {
 
 	err, stdout, stderr := executeCommandWithOutputForTest("search")
 	assertExitCode(t, err, 2)
+	if !strings.Contains(stdout+stderr, "missing query") {
+		t.Fatalf("missing query message not shown: stdout=%q stderr=%q", stdout, stderr)
+	}
 	if !strings.Contains(stdout+stderr, "Usage:") {
 		t.Fatalf("usage output missing: stdout=%q stderr=%q", stdout, stderr)
 	}
@@ -114,7 +117,7 @@ func TestSearchCommandInvalidModeExitsTwo(t *testing.T) {
 
 	err, _, stderr := executeCommandWithOutputForTest("search", "test query", "--mode", "nope")
 	assertExitCode(t, err, 2)
-	if !strings.Contains(stderr, "invalid --mode") {
+	if !strings.Contains(stderr, "invalid mode") {
 		t.Fatalf("stderr = %q, want invalid mode message", stderr)
 	}
 }

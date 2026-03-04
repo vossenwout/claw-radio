@@ -30,8 +30,24 @@ var (
 
 var searchCmd = &cobra.Command{
 	Use:   "search <query>",
-	Short: "Search pages and extract Artist - Title pairs",
-	Args:  cobra.ExactArgs(1),
+	Short: "Find song candidates from the web for your playlist",
+	Long:  "Use this when you need more songs. It returns ranked \"Artist - Title\" candidates you can pass to playlist add.",
+	Example: strings.Join([]string{
+		`  claw-radio search "best 2000s pop songs" --mode genre-top`,
+		`  claw-radio search "Kendrick Lamar" --mode artist-top`,
+		`  claw-radio search "Taylor Swift 2014" --mode artist-year`,
+		`  claw-radio search "Billboard Year-End Hot 100 2012" --mode chart-year`,
+		`  claw-radio search "late-night R&B vibes" --mode chart-year,genre-top`,
+	}, "\n"),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			return nil
+		}
+		if len(args) == 0 {
+			return fmt.Errorf("accepts 1 arg(s), received 0: missing query. Example: claw-radio search \"best 90s hip hop\" --mode genre-top")
+		}
+		return fmt.Errorf("accepts 1 arg(s), received %d", len(args))
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSearch(cmd, args[0])
 	},
@@ -68,6 +84,10 @@ func runSearch(cmd *cobra.Command, query string) error {
 
 	results, stats, err := client.SearchDetailed(query, 150, options)
 	if err != nil {
+		msg := err.Error()
+		if strings.Contains(strings.ToLower(msg), "searxng unreachable") {
+			return exitCode(fmt.Errorf("could not reach SearxNG at %s\n- Check: is SearxNG running?\n- Check: search.searxng_url in config\n- Quick test: curl %s/search?q=test&format=json", cfg.Search.SearxNGURL, cfg.Search.SearxNGURL), 1)
+		}
 		return exitCode(err, 1)
 	}
 
@@ -80,7 +100,7 @@ func runSearch(cmd *cobra.Command, query string) error {
 		return fmt.Errorf("encode search results: %w", err)
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "Fetched %d pages, extracted %d unique songs.\n", stats.PagesAttempted, len(formatted))
+	fmt.Fprintf(cmd.ErrOrStderr(), "Found %d song candidates from %d pages.\n", len(formatted), stats.PagesAttempted)
 	if len(formatted) == 0 && len(stats.UnresponsiveEngines) > 0 {
 		fmt.Fprintf(cmd.ErrOrStderr(), "No search hits returned by SearxNG. Unresponsive engines: %s\n", strings.Join(stats.UnresponsiveEngines, "; "))
 	}
@@ -128,7 +148,7 @@ func parseSearchModes(raw string) ([]searchpkg.QueryMode, error) {
 		}
 		mode := searchpkg.ParseMode(trimmed)
 		if mode == "" {
-			return nil, fmt.Errorf("invalid --mode %q (supported: raw, artist-top, artist-year, chart-year, genre-top; combine with commas)", strings.TrimSpace(raw))
+			return nil, fmt.Errorf("invalid mode %q. Use one of: raw, artist-top, artist-year, chart-year, genre-top. Combine modes with commas, for example: --mode chart-year,genre-top", strings.TrimSpace(raw))
 		}
 		if _, ok := seen[mode]; ok {
 			continue

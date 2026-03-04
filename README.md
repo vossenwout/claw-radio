@@ -1,7 +1,7 @@
 # claw-radio
 
 `claw-radio` is a CLI for running an AI-operated, GTA-style radio station:
-start continuous playback, build a seed list from web search, inject spoken
+start continuous playback, build a playlist pool from web search, inject spoken
 banter, and react to playback events.
 
 ## Installation
@@ -48,8 +48,8 @@ claw-radio tts voice add "https://www.youtube.com/watch?v=<sample>" --name pop
 
 ```bash
 claw-radio start
-claw-radio seed '["Britney Spears - Oops! I Did It Again", "NSYNC - Bye Bye Bye"]'
-claw-radio poll --json
+claw-radio playlist add '["Britney Spears - Oops! I Did It Again", "NSYNC - Bye Bye Bye"]'
+claw-radio poll
 ```
 
 ## CLI Reference
@@ -58,14 +58,17 @@ claw-radio poll --json
 | --- | --- | --- |
 | `tts install` | `none` | Install Chatterbox TTS files into the configured data directory. |
 | `tts voice add` | `--name <voice-name>` | Download a sample URL and save it as a reusable voice prompt WAV. |
-| `start` | `none` | Start the mpv engine and controller daemon. |
-| `stop` | `none` | Stop the mpv engine and controller daemon and remove PID files. |
+| `start` | `none` | Start the radio show. If already running, nothing changes. |
+| `stop` | `none` | End the current radio session. If already stopped, it returns a no-op message. |
+| `reset` | `none` | Start fresh by stopping the radio and clearing playlist pool, station state, and cache. |
 | `next` | `none` | Skip to the next track. |
-| `seed` | `--append` | Replace or append station seeds from a JSON string array of `"Artist - Title"` items. |
-| `search` | `--mode raw\|artist-top\|artist-year\|chart-year\|genre-top, --engines <csv>, --max-pages <n>, --expand-suggestions, --debug` | Query SearxNG and print extracted `Artist - Title` candidates as JSON. |
-| `say` | `--voice <name-or-path>, --for <event-id>` | Render TTS banter. With `--for`, fulfill a pending `banter_needed` event; without it, queue immediate or next-start intro banter. |
-| `poll` | `--json, --timeout <duration>` | Block until one actionable controller event, then print and exit. |
-| `status` | `--json` | Print a runtime state snapshot in text or JSON. |
+| `playlist add` | `none` | Add songs to the playlist pool from a JSON string array of `"Artist - Title"` items. |
+| `playlist view` | `--json` | Show songs currently in the playlist pool. |
+| `playlist reset` | `none` | Clear all songs from the playlist pool. |
+| `search` | `--mode raw\|artist-top\|artist-year\|chart-year\|genre-top, --engines <csv>, --max-pages <n>, --expand-suggestions, --debug` | Find song ideas you can add to your playlist pool. |
+| `say` | `none` | Speak a host line next. If radio is not running, it becomes your intro on next start. |
+| `poll` | `--timeout <duration>` | Wait for the next host cue and return one JSON result. |
+| `status` | `--json` | Check whether the radio is running, what is playing, and queue health. |
 | `version` | `none` | Print the installed `claw-radio` version. |
 
 ## Search Tips
@@ -80,13 +83,13 @@ claw-radio poll --json
 - Set default engine filters in `config.json` under `search.engines` and `search.mode_engines`.
 - Add `--debug` to inspect query expansion, page fetch outcomes, and ranking counts.
 
-## Seed Format
+## Playlist Format
 
-- `seed` expects one JSON array argument: `['Artist - Title', ...]`.
+- `playlist add` expects one JSON array argument: `['Artist - Title', ...]`.
 - Keep entries as plain strings in `Artist - Title` format.
 
 ```bash
-claw-radio seed '[
+claw-radio playlist add '[
   "Kendrick Lamar - Alright",
   "Kendrick Lamar - DNA.",
   "SZA - Saturn",

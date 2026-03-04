@@ -12,134 +12,193 @@ import (
 	"github.com/vossenwout/claw-radio/internal/config"
 )
 
-func TestSeedWritesProvidedSeeds(t *testing.T) {
+func TestPlaylistAddWritesProvidedSongs(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
 			StateDir: stateDir,
 		},
 	}
-	restore := withSeedTestHooks(cfg)
+	restore := withPlaylistTestHooks(cfg)
 	defer restore()
 
-	if err := executeCommandForTest(t, "seed", `["A - B", "C - D"]`); err != nil {
-		t.Fatalf("seed command failed: %v", err)
+	if err := executeCommandForTest(t, "playlist", "add", `["A - B", "C - D"]`); err != nil {
+		t.Fatalf("playlist add command failed: %v", err)
 	}
 
 	station := readStationJSONForTest(t, stateDir)
 	if !reflect.DeepEqual(station.Seeds, []string{"A - B", "C - D"}) {
-		t.Fatalf("seed list mismatch: got %v", station.Seeds)
+		t.Fatalf("playlist songs mismatch: got %v", station.Seeds)
 	}
 }
 
-func TestSeedClearsLabelOnReplace(t *testing.T) {
+func TestPlaylistAddDeduplicatesExistingSong(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
 			StateDir: stateDir,
 		},
 	}
-	restore := withSeedTestHooks(cfg)
+	restore := withPlaylistTestHooks(cfg)
 	defer restore()
 
-	if err := executeCommandForTest(t, "seed", `["A - B"]`); err != nil {
-		t.Fatalf("seed command failed: %v", err)
+	if err := executeCommandForTest(t, "playlist", "add", `["A - B", "C - D"]`); err != nil {
+		t.Fatalf("initial playlist add command failed: %v", err)
+	}
+	if err := executeCommandForTest(t, "playlist", "add", `["A - B"]`); err != nil {
+		t.Fatalf("second playlist add command failed: %v", err)
 	}
 
 	station := readStationJSONForTest(t, stateDir)
-	if station.Label != "" {
-		t.Fatalf("label mismatch: got %q want empty", station.Label)
+	if !reflect.DeepEqual(station.Seeds, []string{"A - B", "C - D"}) {
+		t.Fatalf("playlist songs mismatch after dedupe: got %v", station.Seeds)
 	}
 }
 
-func TestSeedAppendAddsWithoutReplacingExistingSeeds(t *testing.T) {
+func TestPlaylistViewHumanShowsSongs(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
 			StateDir: stateDir,
 		},
 	}
-	restore := withSeedTestHooks(cfg)
+	restore := withPlaylistTestHooks(cfg)
 	defer restore()
 
-	if err := executeCommandForTest(t, "seed", `["A", "B", "C", "D", "E"]`); err != nil {
-		t.Fatalf("initial seed command failed: %v", err)
+	if err := executeCommandForTest(t, "playlist", "add", `["A - B", "C - D"]`); err != nil {
+		t.Fatalf("playlist add command failed: %v", err)
 	}
-	if err := executeCommandForTest(t, "seed", `["X - Y"]`, "--append"); err != nil {
-		t.Fatalf("append seed command failed: %v", err)
+
+	err, stdout, _ := executeCommandWithOutputForTest("playlist", "view")
+	if err != nil {
+		t.Fatalf("playlist view command failed: %v", err)
+	}
+
+	if !strings.Contains(stdout, "Playlist (2 songs):") {
+		t.Fatalf("stdout = %q, want playlist header", stdout)
+	}
+	if !strings.Contains(stdout, "1. A - B") || !strings.Contains(stdout, "2. C - D") {
+		t.Fatalf("stdout = %q, want numbered song rows", stdout)
+	}
+}
+
+func TestPlaylistViewHumanWhenEmpty(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{
+		Station: config.StationConfig{
+			StateDir: stateDir,
+		},
+	}
+	restore := withPlaylistTestHooks(cfg)
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("playlist", "view")
+	if err != nil {
+		t.Fatalf("playlist view command failed: %v", err)
+	}
+	if !strings.Contains(stdout, "Playlist is empty") {
+		t.Fatalf("stdout = %q, want empty message", stdout)
+	}
+}
+
+func TestPlaylistViewJSONReturnsSongArray(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{
+		Station: config.StationConfig{
+			StateDir: stateDir,
+		},
+	}
+	restore := withPlaylistTestHooks(cfg)
+	defer restore()
+
+	if err := executeCommandForTest(t, "playlist", "add", `["A - B", "C - D"]`); err != nil {
+		t.Fatalf("playlist add command failed: %v", err)
+	}
+
+	err, stdout, _ := executeCommandWithOutputForTest("playlist", "view", "--json")
+	if err != nil {
+		t.Fatalf("playlist view --json command failed: %v", err)
+	}
+
+	var songs []string
+	if err := json.Unmarshal([]byte(stdout), &songs); err != nil {
+		t.Fatalf("parse playlist json output: %v", err)
+	}
+	if !reflect.DeepEqual(songs, []string{"A - B", "C - D"}) {
+		t.Fatalf("playlist json mismatch: got %v", songs)
+	}
+}
+
+func TestPlaylistResetClearsSongs(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{
+		Station: config.StationConfig{
+			StateDir: stateDir,
+		},
+	}
+	restore := withPlaylistTestHooks(cfg)
+	defer restore()
+
+	if err := executeCommandForTest(t, "playlist", "add", `["A - B"]`); err != nil {
+		t.Fatalf("playlist add command failed: %v", err)
+	}
+
+	err, stdout, _ := executeCommandWithOutputForTest("playlist", "reset")
+	if err != nil {
+		t.Fatalf("playlist reset command failed: %v", err)
+	}
+	if !strings.Contains(stdout, "Playlist reset") {
+		t.Fatalf("stdout = %q, want reset confirmation", stdout)
 	}
 
 	station := readStationJSONForTest(t, stateDir)
-	if got := len(station.Seeds); got != 6 {
-		t.Fatalf("seed count after append = %d, want 6", got)
+	if len(station.Seeds) != 0 {
+		t.Fatalf("playlist should be empty after reset: %v", station.Seeds)
 	}
 }
 
-func TestSeedAppendDeduplicatesExistingSeed(t *testing.T) {
+func TestPlaylistAddInvalidJSONExitsOneWithParseError(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
 			StateDir: stateDir,
 		},
 	}
-	restore := withSeedTestHooks(cfg)
+	restore := withPlaylistTestHooks(cfg)
 	defer restore()
 
-	if err := executeCommandForTest(t, "seed", `["A", "B"]`); err != nil {
-		t.Fatalf("initial seed command failed: %v", err)
-	}
-	if err := executeCommandForTest(t, "seed", `["B"]`, "--append"); err != nil {
-		t.Fatalf("append seed command failed: %v", err)
-	}
-
-	station := readStationJSONForTest(t, stateDir)
-	if !reflect.DeepEqual(station.Seeds, []string{"A", "B"}) {
-		t.Fatalf("seed list mismatch after dedupe append: got %v", station.Seeds)
-	}
-}
-
-func TestSeedInvalidJSONExitsOneWithParseError(t *testing.T) {
-	stateDir := t.TempDir()
-	cfg := &config.Config{
-		Station: config.StationConfig{
-			StateDir: stateDir,
-		},
-	}
-	restore := withSeedTestHooks(cfg)
-	defer restore()
-
-	err := executeCommandForTest(t, "seed", "not-json")
+	err := executeCommandForTest(t, "playlist", "add", "not-json")
 	assertExitCode(t, err, 1)
-	if !strings.Contains(strings.ToLower(err.Error()), "parse seed json") {
+	if !strings.Contains(strings.ToLower(err.Error()), "parse playlist json") {
 		t.Fatalf("expected parse error message, got %q", err)
 	}
 }
 
-func TestSeedNonArrayJSONExitsOne(t *testing.T) {
+func TestPlaylistAddNonArrayJSONExitsOne(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
 			StateDir: stateDir,
 		},
 	}
-	restore := withSeedTestHooks(cfg)
+	restore := withPlaylistTestHooks(cfg)
 	defer restore()
 
-	err := executeCommandForTest(t, "seed", "42")
+	err := executeCommandForTest(t, "playlist", "add", "42")
 	assertExitCode(t, err, 1)
 }
 
-func TestSeedWithoutArgumentExitsTwoWithUsage(t *testing.T) {
+func TestPlaylistAddWithoutArgumentExitsTwoWithUsage(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
 			StateDir: stateDir,
 		},
 	}
-	restore := withSeedTestHooks(cfg)
+	restore := withPlaylistTestHooks(cfg)
 	defer restore()
 
-	err, stdout, stderr := executeCommandWithOutputForTest("seed")
+	err, stdout, stderr := executeCommandWithOutputForTest("playlist", "add")
 	assertExitCode(t, err, 2)
 	output := stdout + stderr
 	if !strings.Contains(output, "Usage:") {
@@ -167,15 +226,18 @@ func readStationJSONForTest(t *testing.T, stateDir string) stationFileForSeedTes
 	return station
 }
 
-func withSeedTestHooks(cfg *config.Config) func() {
+func withPlaylistTestHooks(cfg *config.Config) func() {
 	origLoad := loadConfigFn
+	origViewJSON := playlistViewJSONFlag
 	loadConfigFn = func() (*config.Config, error) {
 		copy := *cfg
 		return &copy, nil
 	}
+	playlistViewJSONFlag = false
 
 	return func() {
 		loadConfigFn = origLoad
+		playlistViewJSONFlag = origViewJSON
 	}
 }
 

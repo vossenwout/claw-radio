@@ -69,7 +69,8 @@ var (
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show a one-shot runtime state snapshot",
+	Short: "Check what the radio is doing right now",
+	Long:  "Show whether the radio is running, what is currently playing, and how full the queue is.",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runStatus(cmd, statusJSONFlag)
@@ -313,6 +314,6 @@ func renderHumanStatus(w io.Writer, snapshot statusSnapshot) {
 }
 
 func init() {
-	statusCmd.Flags().BoolVar(&statusJSONFlag, "json", false, "Output JSON snapshot")
+	statusCmd.Flags().BoolVar(&statusJSONFlag, "json", false, "Return status as JSON")
 	RootCmd.AddCommand(statusCmd)
 }

@@ -3,7 +3,7 @@ name: claw-radio
 description: >
   GTA-style AI radio station. You operate the radio as a character whose voice
   matches the station vibe. The CLI is your control board; you are the host.
-  Use this skill to: start the radio, build a song seed list by searching the
+  Use this skill to: start the radio, build a playlist pool by searching the
   web, inject spoken banter between tracks, and react to playback events. Works
   on macOS and Linux. Requires: mpv, yt-dlp, SearxNG.
 ---
@@ -23,9 +23,9 @@ Match your voice and energy to the station vibe:
 
 Banter is short: 1-2 sentences, under 25 words, specific to the moment.
 
-## Building a seed list
+## Building a playlist pool
 
-Before seeding, call `claw-radio search` multiple times. Prefer deterministic
+Before building your playlist pool, call `claw-radio search` multiple times. Prefer deterministic
 mode-based queries for higher quality output.
 
 ### Search modes (what they actually do)
@@ -50,17 +50,17 @@ defaults in `config.json` under `search.engines` and `search.mode_engines`.
 Modes can be combined with commas, for example: `--mode chart-year,genre-top`.
 
 Accumulate results across calls, deduplicate, supplement with your own
-knowledge (10-20 key songs), then seed.
+knowledge (10-20 key songs), then add to the playlist.
 
-### Seed format (important)
+### Playlist format (important)
 
-- `claw-radio seed` takes one JSON array of strings.
+- `claw-radio playlist add` takes one JSON array of strings.
 - Each item should be `Artist - Title`.
 
-Example curated seed payload:
+Example curated playlist payload:
 
 ```bash
-claw-radio seed '[
+claw-radio playlist add '[
   "Kendrick Lamar - Alright",
   "Kendrick Lamar - DNA.",
   "SZA - Saturn",
@@ -77,21 +77,23 @@ claw-radio seed '[
 1. Variety pool: run one broad query with `--mode chart-year,genre-top`.
 2. Flavor injectors: run 1-2 targeted artist queries with `--mode artist-top`.
 3. Optional niche filler: run one precise `--mode raw` query if variety is thin.
-4. Merge and dedupe by exact `Artist - Title`, then seed.
+4. Merge and dedupe by exact `Artist - Title`, then add.
 
 ## Playback control (important)
 
 The agent should actually run playback commands, not just watch events.
 
-- `claw-radio start`: starts engine/controller.
-- `claw-radio seed '[...]'`: loads station seeds (this should
-  trigger normal queue generation/playback flow).
-- `claw-radio poll --json --timeout 30s`: block until one actionable event,
-  print one event, and exit.
+- `claw-radio start`: starts the radio if it is not already running.
+- `claw-radio stop`: ends the current radio session.
+- `claw-radio reset`: stops the radio and clears playlist pool, station state, and cache.
+- `claw-radio playlist add '[...]'`: adds songs for normal queue generation/playback.
+- `claw-radio playlist view --json`: inspect the current playlist pool.
+- `claw-radio playlist reset`: clear playlist pool songs.
+- `claw-radio poll --timeout 30s`: wait for one host cue, print one JSON cue,
+  and exit.
 - `claw-radio status --json`: verify playback state and queue health.
 - `claw-radio next`: skip immediately if the current song is wrong for vibe.
-- `claw-radio say "<banter>" --for <event_id>`: fulfill pending banter event.
-- `claw-radio say "<intro>"` before `start`: queue intro banter for next start.
+- `claw-radio say "<banter>"`: put banter at the front of what plays next.
 
 ### Era / genre vibes
 
@@ -131,8 +133,8 @@ claw-radio search "<broad vibe query>" --mode chart-year,genre-top
 claw-radio search "<target artist query>" --mode artist-top
 claw-radio search "<precision fallback>" --mode raw
 
-# 2. Seed the curated list
-claw-radio seed '[...curated list...]'
+# 2. Add the curated list
+claw-radio playlist add '[...curated list...]'
 
 # 3. Optional intro before music starts
 claw-radio say "Welcome back, this is your late-night mix."
@@ -147,28 +149,28 @@ claw-radio status --json
 claw-radio next
 
 # 7. Agent loop: poll one event at a time
-claw-radio poll --json --timeout 30s
+claw-radio poll --timeout 30s
 ```
 
 ## Reacting to poll events
 
-Use `claw-radio poll --json --timeout 30s` repeatedly. Each call returns one
+Use `claw-radio poll --timeout 30s` repeatedly. Each call returns one
 event and exits.
 
 **`banter_needed`** - generate and inject banter before upcoming track:
 
-- Read `event_id`, `prompt`, and `next_song` from event payload.
+- Read `prompt` and `next_song` from event payload.
 - Generate 1-2 short sentences in persona.
-- `claw-radio say "<quip>" --for <event_id>`
+- `claw-radio say "<quip>"`
 
 **`queue_low`** - find and append more songs:
 
 - `claw-radio search "<another query>" --mode chart-year,genre-top`
-- `claw-radio seed '[new songs]' --append`
+- `claw-radio playlist add '[new songs]'`
 
 **`engine_stopped`** - restart with `claw-radio start`.
 
-**`timeout`** - no actionable event yet; poll again.
+**`timeout`** - no new cue yet; poll again.
 
 ## Stopping
 
