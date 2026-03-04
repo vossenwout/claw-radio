@@ -32,7 +32,7 @@ func TestSeedWritesProvidedSeeds(t *testing.T) {
 	}
 }
 
-func TestSeedWritesLabelWhenProvided(t *testing.T) {
+func TestSeedClearsLabelOnReplace(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{
 		Station: config.StationConfig{
@@ -42,13 +42,13 @@ func TestSeedWritesLabelWhenProvided(t *testing.T) {
 	restore := withSeedTestHooks(cfg)
 	defer restore()
 
-	if err := executeCommandForTest(t, "seed", `["A - B"]`, "--label", "2000s pop"); err != nil {
+	if err := executeCommandForTest(t, "seed", `["A - B"]`); err != nil {
 		t.Fatalf("seed command failed: %v", err)
 	}
 
 	station := readStationJSONForTest(t, stateDir)
-	if station.Label != "2000s pop" {
-		t.Fatalf("label mismatch: got %q want %q", station.Label, "2000s pop")
+	if station.Label != "" {
+		t.Fatalf("label mismatch: got %q want empty", station.Label)
 	}
 }
 

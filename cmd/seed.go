@@ -10,14 +10,18 @@ import (
 )
 
 var (
-	seedLabelFlag  string
 	seedAppendFlag bool
 )
 
 var seedCmd = &cobra.Command{
 	Use:   "seed <json-array>",
 	Short: "Set or append the station seed list",
-	Args:  seedArgs,
+	Long:  "Set or append the station seed list using a JSON string array of 'Artist - Title' entries.",
+	Example: strings.Join([]string{
+		"  claw-radio seed '[\"Britney Spears - Oops! I Did It Again\",\"NSYNC - Bye Bye Bye\"]'",
+		"  claw-radio seed '[\"Daft Punk - One More Time\"]' --append",
+	}, "\n"),
+	Args: seedArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSeed(cmd, args[0])
 	},
@@ -58,17 +62,11 @@ func runSeed(cmd *cobra.Command, raw string) error {
 		return nil
 	}
 
-	st.SetSeeds(seeds, seedLabelFlag)
+	st.SetSeeds(seeds, "")
 	if err := st.Save(); err != nil {
 		return fmt.Errorf("save station state: %w", err)
 	}
-
-	if strings.TrimSpace(seedLabelFlag) == "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "Seeded %d songs\n", len(seeds))
-		return nil
-	}
-
-	fmt.Fprintf(cmd.OutOrStdout(), "Seeded %d songs (label: %s)\n", len(seeds), seedLabelFlag)
+	fmt.Fprintf(cmd.OutOrStdout(), "Seeded %d songs\n", len(seeds))
 	return nil
 }
 
@@ -81,7 +79,6 @@ func parseSeeds(raw string) ([]string, error) {
 }
 
 func init() {
-	seedCmd.Flags().StringVar(&seedLabelFlag, "label", "", "Label for the seeded station")
 	seedCmd.Flags().BoolVar(&seedAppendFlag, "append", false, "Append to existing seeds instead of replacing")
 	RootCmd.AddCommand(seedCmd)
 }

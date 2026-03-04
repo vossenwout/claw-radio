@@ -1,6 +1,7 @@
 package station
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,7 @@ type mpvClient interface {
 	PlaylistCount() (int, error)
 	PlaylistPaths() ([]string, error)
 	LoadFile(path, mode string) error
+	Get(prop string) (json.RawMessage, error)
 	Events() <-chan map[string]interface{}
 }
 
@@ -65,6 +67,13 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 		client: client,
 		prov:   prov,
 		log:    log,
+		events: NewAgentEventStore(cfg.Station.StateDir),
+	}
+	if err := svc.events.Ensure(); err != nil {
+		svc.logf("ensure agent events failed: %v", err)
+	}
+	if err := svc.enqueuePendingIntro(); err != nil {
+		svc.logf("enqueue pending intro failed: %v", err)
 	}
 
 	if err := svc.fillQueue(); err != nil {
@@ -82,19 +91,27 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 		select {
 		case event, ok := <-client.Events():
 			if !ok {
+				svc.emitEngineStopped()
 				svc.saveState()
 				return nil
+			}
+			if name, _ := event["event"].(string); name == "file-loaded" {
+				if err := svc.handleTrackStarted(); err != nil {
+					svc.logf("handleTrackStarted failed: %v", err)
+				}
 			}
 			if name, _ := event["event"].(string); name == "end-file" {
 				if err := svc.fillQueue(); err != nil {
 					svc.logf("fillQueue on end-file failed: %v", err)
 				}
+				svc.emitQueueLowIfNeeded()
 			}
 		case <-ticker.C:
 			if err := svc.fillQueue(); err != nil {
 				svc.logf("fillQueue on ticker failed: %v", err)
 			}
 		case <-sigCh:
+			svc.emitEngineStopped()
 			svc.saveState()
 			return nil
 		}
@@ -107,6 +124,243 @@ type service struct {
 	client mpvClient
 	prov   provider.Provider
 	log    io.Writer
+	events *AgentEventStore
+}
+
+func (s *service) handleTrackStarted() error {
+	currentPath, _ := readStringPropertyCompat(s.client, "path")
+	if currentPath != "" {
+		if pending, err := s.events.LoadPendingBanter(); err == nil && pending != nil {
+			if sameMediaPath(pending.NextSong.Path, currentPath) {
+				_ = s.events.ClearPendingBanter()
+			}
+		}
+	}
+
+	nextSong, ok, err := s.peekNextSong()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+
+	if pending, err := s.events.LoadPendingBanter(); err == nil && pending != nil {
+		if sameMediaPath(pending.NextSong.Path, nextSong.Path) {
+			return nil
+		}
+	}
+
+	eventID := fmt.Sprintf("evt_%d", time.Now().UnixNano())
+	nextDisplay := strings.TrimSpace(nextSong.Artist)
+	if strings.TrimSpace(nextSong.Title) != "" {
+		if nextDisplay != "" {
+			nextDisplay += " - " + strings.TrimSpace(nextSong.Title)
+		} else {
+			nextDisplay = strings.TrimSpace(nextSong.Title)
+		}
+	}
+	prompt := "Generate banter for the next song in 1-2 short sentences."
+	if nextDisplay != "" {
+		prompt += " Next song: " + nextDisplay
+	}
+
+	if err := s.events.SavePendingBanter(PendingBanter{
+		EventID:    eventID,
+		TS:         time.Now().Unix(),
+		Prompt:     prompt,
+		NextSong:   nextSong,
+		DeadlineMS: defaultBanterDeadlineMillis,
+		Fulfilled:  false,
+	}); err != nil {
+		return err
+	}
+
+	return s.events.Append(AgentEvent{
+		Event:      "banter_needed",
+		EventID:    eventID,
+		TS:         time.Now().Unix(),
+		Prompt:     prompt,
+		NextSong:   &nextSong,
+		DeadlineMS: defaultBanterDeadlineMillis,
+	})
+}
+
+func (s *service) emitQueueLowIfNeeded() {
+	count, err := s.client.PlaylistCount()
+	if err != nil {
+		return
+	}
+	if count > 2 {
+		return
+	}
+	depth := s.cfg.Station.QueueDepth
+	if depth <= 0 {
+		depth = defaultQueueDepth
+	}
+	_ = s.events.Append(AgentEvent{
+		Event:   "queue_low",
+		EventID: fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+		TS:      time.Now().Unix(),
+		Count:   count,
+		Depth:   depth,
+	})
+}
+
+func (s *service) emitEngineStopped() {
+	if s.events == nil {
+		return
+	}
+	_ = s.events.Append(AgentEvent{
+		Event:   "engine_stopped",
+		EventID: fmt.Sprintf("evt_%d", time.Now().UnixNano()),
+		TS:      time.Now().Unix(),
+	})
+}
+
+func (s *service) enqueuePendingIntro() error {
+	if s.events == nil {
+		return nil
+	}
+	pending, err := s.events.LoadPendingIntro()
+	if err != nil || pending == nil {
+		return err
+	}
+	if strings.TrimSpace(pending.AudioPath) == "" {
+		_ = s.events.ClearPendingIntro()
+		return nil
+	}
+	if _, err := os.Stat(pending.AudioPath); err != nil {
+		_ = s.events.ClearPendingIntro()
+		return nil
+	}
+	mode := "append"
+	if count, err := s.client.PlaylistCount(); err == nil && count == 0 {
+		mode = "append-play"
+	}
+	if err := s.client.LoadFile(pending.AudioPath, mode); err != nil {
+		return err
+	}
+	_ = s.events.ClearPendingIntro()
+	return nil
+}
+
+func (s *service) peekNextSong() (AgentSong, bool, error) {
+	raw, err := s.client.Get("playlist")
+	if err != nil {
+		return AgentSong{}, false, err
+	}
+
+	var items []struct {
+		Filename string `json:"filename"`
+		Current  bool   `json:"current"`
+		Playing  bool   `json:"playing"`
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return AgentSong{}, false, err
+	}
+	if len(items) == 0 {
+		return AgentSong{}, false, nil
+	}
+
+	currentIndex := -1
+	for i, item := range items {
+		if item.Current || item.Playing {
+			currentIndex = i
+			break
+		}
+	}
+	if currentIndex < 0 {
+		return AgentSong{}, false, nil
+	}
+	nextIndex := currentIndex + 1
+	if nextIndex >= len(items) {
+		return AgentSong{}, false, nil
+	}
+	nextPath := strings.TrimSpace(items[nextIndex].Filename)
+	if nextPath == "" {
+		return AgentSong{}, false, nil
+	}
+
+	song := songFromPath(nextPath)
+	return song, true, nil
+}
+
+func songFromPath(path string) AgentSong {
+	song := AgentSong{Path: strings.TrimSpace(path)}
+	if song.Path == "" {
+		return song
+	}
+
+	metaPath := song.Path + ".meta.json"
+	data, err := os.ReadFile(metaPath)
+	if err == nil {
+		var meta struct {
+			Seed    string `json:"seed"`
+			Artist  string `json:"artist"`
+			Title   string `json:"title"`
+			Display string `json:"display"`
+		}
+		if err := json.Unmarshal(data, &meta); err == nil {
+			song.Artist = strings.TrimSpace(meta.Artist)
+			song.Title = strings.TrimSpace(meta.Title)
+			if song.Artist == "" && song.Title == "" {
+				display := strings.TrimSpace(meta.Display)
+				if display == "" {
+					display = strings.TrimSpace(meta.Seed)
+				}
+				if display != "" {
+					parts := strings.SplitN(display, " - ", 2)
+					if len(parts) == 2 {
+						song.Artist = strings.TrimSpace(parts[0])
+						song.Title = strings.TrimSpace(parts[1])
+					} else {
+						song.Title = display
+					}
+				}
+			}
+		}
+	}
+
+	if song.Title == "" {
+		base := filepath.Base(song.Path)
+		song.Title = strings.TrimSpace(strings.TrimSuffix(base, filepath.Ext(base)))
+	}
+
+	return song
+}
+
+func sameMediaPath(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA == nil && errB == nil {
+		return absA == absB
+	}
+	return false
+}
+
+func readStringPropertyCompat(client mpvClient, prop string) (string, bool) {
+	raw, err := client.Get(prop)
+	if err != nil {
+		return "", false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	return value, true
 }
 
 func (s *service) fillQueue() error {
@@ -154,7 +408,11 @@ func (s *service) fillQueue() error {
 			continue
 		}
 
-		if err := s.client.LoadFile(audioPath, "append"); err != nil {
+		mode := "append"
+		if count == 0 {
+			mode = "append-play"
+		}
+		if err := s.client.LoadFile(audioPath, mode); err != nil {
 			s.logf("append path %q failed: %v", audioPath, err)
 			continue
 		}

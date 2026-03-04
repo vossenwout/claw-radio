@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vossenwout/claw-radio/internal/config"
 	"github.com/vossenwout/claw-radio/internal/mpv"
+	"github.com/vossenwout/claw-radio/internal/station"
 )
 
 const (
@@ -71,6 +72,13 @@ func runStart(cmd *cobra.Command) error {
 
 	if err := cleanupPIDFiles(); err != nil {
 		return fmt.Errorf("cleanup stale pid files: %w", err)
+	}
+
+	if strings.TrimSpace(cfg.Station.StateDir) != "" {
+		eventStore := station.NewAgentEventStore(cfg.Station.StateDir)
+		if err := eventStore.ClearRuntimeState(); err != nil {
+			return fmt.Errorf("reset runtime event state: %w", err)
+		}
 	}
 
 	logFile, err := openLogFile(cfg.MPV.Log)

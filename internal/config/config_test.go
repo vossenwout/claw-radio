@@ -45,6 +45,30 @@ func TestLoadNoConfigFileReturnsDefaults(t *testing.T) {
 	if cfg.Search.SearxNGURL != defaultSearchSearxURL {
 		t.Fatalf("unexpected searxng url: %q", cfg.Search.SearxNGURL)
 	}
+	if cfg.Search.MaxSearchHits != 20 {
+		t.Fatalf("unexpected search max hits: %d", cfg.Search.MaxSearchHits)
+	}
+	if cfg.Search.MaxPages != 20 {
+		t.Fatalf("unexpected search max pages: %d", cfg.Search.MaxPages)
+	}
+	if cfg.Search.FetchConcurrency != 6 {
+		t.Fatalf("unexpected search fetch concurrency: %d", cfg.Search.FetchConcurrency)
+	}
+	if cfg.Search.RequestTimeoutSeconds != 30 {
+		t.Fatalf("unexpected search timeout seconds: %d", cfg.Search.RequestTimeoutSeconds)
+	}
+	if cfg.Search.UserAgent != defaultSearchUserAgent {
+		t.Fatalf("unexpected search user agent: %q", cfg.Search.UserAgent)
+	}
+	if cfg.Search.EnableQueryExpansion {
+		t.Fatalf("expected search query expansion default false")
+	}
+	if len(cfg.Search.Engines) != 0 {
+		t.Fatalf("expected default search.engines to be empty, got %v", cfg.Search.Engines)
+	}
+	if len(cfg.Search.ModeEngines.Raw) != 0 || len(cfg.Search.ModeEngines.ArtistTop) != 0 || len(cfg.Search.ModeEngines.ArtistYear) != 0 || len(cfg.Search.ModeEngines.ChartYear) != 0 || len(cfg.Search.ModeEngines.GenreTop) != 0 {
+		t.Fatalf("expected default mode engine lists to be empty, got %+v", cfg.Search.ModeEngines)
+	}
 	if cfg.MPV.Binary != "" {
 		t.Fatalf("expected empty mpv binary, got %q", cfg.MPV.Binary)
 	}
@@ -59,7 +83,24 @@ func TestLoadOverridesFromEnvironmentConfig(t *testing.T) {
 	content := `{
 		"mpv": {"socket": "/tmp/custom-mpv.sock"},
 		"station": {"queue_depth": 9},
-		"search": {"searxng_url": "http://localhost:9999"},
+		"search": {
+			"searxng_url": "http://localhost:9999",
+			"max_search_hits": 12,
+			"max_pages": 11,
+			"fetch_concurrency": 4,
+			"request_timeout_seconds": 9,
+			"user_agent": "custom-agent",
+			"enable_query_expansion": true,
+			"debug": true,
+			"engines": ["yahoo", "bing"],
+			"mode_engines": {
+				"raw": ["yahoo"],
+				"artist_top": ["yahoo", "mojeek"],
+				"artist_year": ["yahoo"],
+				"chart_year": ["yahoo"],
+				"genre_top": ["yahoo", "ask"]
+			}
+		},
 		"tts": {"voices": {"pop": "~/voices/pop.wav"}}
 	}`
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
@@ -80,6 +121,45 @@ func TestLoadOverridesFromEnvironmentConfig(t *testing.T) {
 	}
 	if cfg.Search.SearxNGURL != "http://localhost:9999" {
 		t.Fatalf("expected search override, got %q", cfg.Search.SearxNGURL)
+	}
+	if cfg.Search.MaxSearchHits != 12 {
+		t.Fatalf("expected max_search_hits override, got %d", cfg.Search.MaxSearchHits)
+	}
+	if cfg.Search.MaxPages != 11 {
+		t.Fatalf("expected max_pages override, got %d", cfg.Search.MaxPages)
+	}
+	if cfg.Search.FetchConcurrency != 4 {
+		t.Fatalf("expected fetch_concurrency override, got %d", cfg.Search.FetchConcurrency)
+	}
+	if cfg.Search.RequestTimeoutSeconds != 9 {
+		t.Fatalf("expected request_timeout_seconds override, got %d", cfg.Search.RequestTimeoutSeconds)
+	}
+	if cfg.Search.UserAgent != "custom-agent" {
+		t.Fatalf("expected user_agent override, got %q", cfg.Search.UserAgent)
+	}
+	if !cfg.Search.EnableQueryExpansion {
+		t.Fatalf("expected enable_query_expansion override true")
+	}
+	if !cfg.Search.Debug {
+		t.Fatalf("expected debug override true")
+	}
+	if strings.Join(cfg.Search.Engines, ",") != "yahoo,bing" {
+		t.Fatalf("expected engines override, got %v", cfg.Search.Engines)
+	}
+	if strings.Join(cfg.Search.ModeEngines.Raw, ",") != "yahoo" {
+		t.Fatalf("expected mode_engines.raw override, got %v", cfg.Search.ModeEngines.Raw)
+	}
+	if strings.Join(cfg.Search.ModeEngines.ArtistTop, ",") != "yahoo,mojeek" {
+		t.Fatalf("expected mode_engines.artist_top override, got %v", cfg.Search.ModeEngines.ArtistTop)
+	}
+	if strings.Join(cfg.Search.ModeEngines.ArtistYear, ",") != "yahoo" {
+		t.Fatalf("expected mode_engines.artist_year override, got %v", cfg.Search.ModeEngines.ArtistYear)
+	}
+	if strings.Join(cfg.Search.ModeEngines.ChartYear, ",") != "yahoo" {
+		t.Fatalf("expected mode_engines.chart_year override, got %v", cfg.Search.ModeEngines.ChartYear)
+	}
+	if strings.Join(cfg.Search.ModeEngines.GenreTop, ",") != "yahoo,ask" {
+		t.Fatalf("expected mode_engines.genre_top override, got %v", cfg.Search.ModeEngines.GenreTop)
 	}
 	if cfg.TTS.Voices["pop"] != filepath.Join(home, "voices", "pop.wav") {
 		t.Fatalf("expected expanded voice path override, got %q", cfg.TTS.Voices["pop"])

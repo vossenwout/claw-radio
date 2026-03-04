@@ -107,6 +107,27 @@ func TestExtractAcceptanceCriteria(t *testing.T) {
 			t.Fatalf("Generic() = %#v, want empty result", got)
 		}
 	})
+
+	t.Run("billboard ranked list parsing", func(t *testing.T) {
+		html := `<ol><li>1. Kendrick Lamar - Not Like Us *</li><li>2. SZA - Saturn</li></ol>`
+		got := Billboard(html)
+		want := []Result{
+			{Artist: "Kendrick Lamar", Title: "Not Like Us"},
+			{Artist: "SZA", Title: "Saturn"},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Billboard() = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("youtube title parsing", func(t *testing.T) {
+		html := `<html><head><title>Kendrick Lamar - Not Like Us - YouTube</title></head></html>`
+		got := YouTube(html)
+		want := []Result{{Artist: "Kendrick Lamar", Title: "Not Like Us"}}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("YouTube() = %#v, want %#v", got, want)
+		}
+	})
 }
 
 func mustReadFixture(t *testing.T, name string) string {

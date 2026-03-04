@@ -27,6 +27,21 @@
     "state_dir": "~/.local/share/claw-radio/state"
   },
   "search": {
-    "searxng_url": "http://localhost:8888"
+    "searxng_url": "http://localhost:8888",
+    "max_search_hits": 20,
+    "max_pages": 20,
+    "fetch_concurrency": 6,
+    "request_timeout_seconds": 30,
+    "user_agent": "claw-radio/1.0 (+https://github.com/vossenwout/claw-radio)",
+    "enable_query_expansion": false,
+    "debug": false,
+    "engines": [],
+    "mode_engines": {
+      "raw": [],
+      "artist_top": [],
+      "artist_year": [],
+      "chart_year": [],
+      "genre_top": []
+    }
   }
 }

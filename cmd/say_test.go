@@ -9,12 +9,17 @@ import (
 
 	"github.com/vossenwout/claw-radio/internal/config"
 	"github.com/vossenwout/claw-radio/internal/mpv"
+	"github.com/vossenwout/claw-radio/internal/station"
 )
 
-func TestSayWhenMPVNotRunningExitsFive(t *testing.T) {
+func TestSayWhenMPVNotRunningQueuesIntroForNextStart(t *testing.T) {
+	stateDir := t.TempDir()
 	cfg := &config.Config{
 		MPV: config.MPVConfig{
 			Socket: filepath.Join(t.TempDir(), "missing.sock"),
+		},
+		Station: config.StationConfig{
+			StateDir: stateDir,
 		},
 		TTS: config.TTSConfig{
 			DataDir: t.TempDir(),
@@ -24,13 +29,21 @@ func TestSayWhenMPVNotRunningExitsFive(t *testing.T) {
 	restore := withSayTestHooks(cfg, ttsClient)
 	defer restore()
 
-	err := executeCommandForTest(t, "say", "hello")
-	assertExitCode(t, err, 5)
+	err, stdout, _ := executeCommandWithOutputForTest("say", "hello")
+	if err != nil {
+		t.Fatalf("say failed: %v", err)
+	}
+	if !strings.Contains(stdout, "queued intro banter for next start") {
+		t.Fatalf("stdout = %q, want intro queue message", stdout)
+	}
+	if _, statErr := os.Stat(filepath.Join(stateDir, "pending-intro.json")); statErr != nil {
+		t.Fatalf("pending intro file missing: %v", statErr)
+	}
 }
 
 func TestSayWhenTTSUnavailableExitsFour(t *testing.T) {
 	socketPath := makePlaybackSocketPath(t, "say-unavailable")
-	server := startPlaybackMPVServer(t, socketPath)
+	_ = startPlaybackMPVServer(t, socketPath)
 
 	cfg := &config.Config{
 		MPV: config.MPVConfig{
@@ -48,7 +61,6 @@ func TestSayWhenTTSUnavailableExitsFour(t *testing.T) {
 
 	err := executeCommandForTest(t, "say", "hello")
 	assertExitCode(t, err, 4)
-	server.wait(t)
 }
 
 func TestSayVoiceNameResolvesToDataDirVoiceFile(t *testing.T) {
@@ -180,6 +192,65 @@ func TestSayOnSuccessPrintsQueuedBanterAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestSayForPendingEventMarksFulfilled(t *testing.T) {
+	stateDir := t.TempDir()
+	socketPath := makePlaybackSocketPath(t, "say-for-event")
+	server := startPlaybackMPVServer(t, socketPath)
+
+	cfg := &config.Config{
+		MPV: config.MPVConfig{Socket: socketPath},
+		Station: config.StationConfig{
+			StateDir: stateDir,
+		},
+		TTS: config.TTSConfig{DataDir: t.TempDir()},
+	}
+	store := station.NewAgentEventStore(stateDir)
+	if err := store.SavePendingBanter(station.PendingBanter{
+		EventID: "evt_123",
+		NextSong: station.AgentSong{
+			Artist: "Kendrick Lamar",
+			Title:  "Money Trees",
+			Path:   "/tmp/song.opus",
+		},
+	}); err != nil {
+		t.Fatalf("save pending banter: %v", err)
+	}
+
+	ttsClient := &fakeSayTTSClient{}
+	restore := withSayTestHooks(cfg, ttsClient)
+	defer restore()
+
+	err := executeCommandForTest(t, "say", "banter", "--for", "evt_123")
+	if err != nil {
+		t.Fatalf("say --for failed: %v", err)
+	}
+	server.wait(t)
+
+	pending, err := store.LoadPendingBanter()
+	if err != nil {
+		t.Fatalf("load pending banter: %v", err)
+	}
+	if pending == nil || !pending.Fulfilled {
+		t.Fatalf("pending banter not fulfilled: %#v", pending)
+	}
+}
+
+func TestSayForMissingPendingEventExitsOne(t *testing.T) {
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: filepath.Join(t.TempDir(), "missing.sock"),
+		},
+		Station: config.StationConfig{StateDir: t.TempDir()},
+		TTS:     config.TTSConfig{DataDir: t.TempDir()},
+	}
+	ttsClient := &fakeSayTTSClient{}
+	restore := withSayTestHooks(cfg, ttsClient)
+	defer restore()
+
+	err := executeCommandForTest(t, "say", "banter", "--for", "evt_missing")
+	assertExitCode(t, err, 1)
+}
+
 func TestSayWithoutTextArgumentExitsTwo(t *testing.T) {
 	cfg := &config.Config{
 		MPV: config.MPVConfig{
@@ -220,6 +291,7 @@ func withSayTestHooks(cfg *config.Config, ttsClient sayTTSRenderer) func() {
 	origTTS := newSayTTSClientFn
 	origNow := nowUnixNanoFn
 	origVoiceFlag := sayVoiceFlag
+	origForFlag := sayForFlag
 
 	loadConfigFn = func() (*config.Config, error) {
 		copy := *cfg
@@ -235,6 +307,7 @@ func withSayTestHooks(cfg *config.Config, ttsClient sayTTSRenderer) func() {
 		return 123456789
 	}
 	sayVoiceFlag = ""
+	sayForFlag = ""
 
 	return func() {
 		loadConfigFn = origLoad
@@ -242,5 +315,6 @@ func withSayTestHooks(cfg *config.Config, ttsClient sayTTSRenderer) func() {
 		newSayTTSClientFn = origTTS
 		nowUnixNanoFn = origNow
 		sayVoiceFlag = origVoiceFlag
+		sayForFlag = origForFlag
 	}
 }

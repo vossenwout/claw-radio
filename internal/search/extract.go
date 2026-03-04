@@ -18,7 +18,7 @@ var (
 	trRe             = regexp.MustCompile(`(?is)<tr\b[^>]*>(.*?)</tr>`)
 	thRe             = regexp.MustCompile(`(?is)<th\b[^>]*>(.*?)</th>`)
 	cellRe           = regexp.MustCompile(`(?is)<t[dh]\b[^>]*>(.*?)</t[dh]>`)
-	footnoteRe       = regexp.MustCompile(`\[\d+\]`)
+	footnoteRe       = regexp.MustCompile(`\[\s*\d+\s*\]`)
 	tagRe            = regexp.MustCompile(`(?is)<[^>]+>`)
 
 	discogsArtistRe = regexp.MustCompile(`(?is)<[a-z0-9]+\b[^>]*class\s*=\s*["'][^"']*\btracklist_track_artists\b[^"']*["'][^>]*>(.*?)</[a-z0-9]+>`)
@@ -33,7 +33,21 @@ var (
 	lineEmDashRe = regexp.MustCompile(`^(.{2,80}?)\s*[–—]\s*(.{2,80}?)$`)
 	lineHyphenRe = regexp.MustCompile(`^(.{2,80}?)\s+-\s+(.{2,80}?)$`)
 	lineByRe     = regexp.MustCompile(`(?i)^(.{2,60}?)\s+\bby\b\s+(.{2,60}?)$`)
+	lineRankedRe = regexp.MustCompile(`^\d{1,3}\.\s+(.{2,100}?)\s+-\s+(.{2,140}?)(?:\s+\*+)?$`)
+	rankPrefixRe = regexp.MustCompile(`^\d{1,3}\.\s+`)
 	timestampRe  = regexp.MustCompile(`^\d{1,2}:\d{2}(?::\d{2})?$`)
+	timeOfDayRe  = regexp.MustCompile(`(?i)\b\d{1,2}:\d{2}\s*(am|pm)\b`)
+	monthDateRe  = regexp.MustCompile(`(?i)\b\d{1,2}\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b`)
+
+	titleTagRe          = regexp.MustCompile(`(?is)<title\b[^>]*>(.*?)</title>`)
+	h1Re                = regexp.MustCompile(`(?is)<h1\b[^>]*>(.*?)</h1>`)
+	kworbSongTableRe    = regexp.MustCompile(`(?is)<table\b[^>]*class\s*=\s*["'][^"']*\baddpos\b[^"']*\bsortable\b[^"']*["'][^>]*>(.*?)</table>`)
+	kworbTrackAnchorRe  = regexp.MustCompile(`(?is)<a\b[^>]*href\s*=\s*["']https?://open\.spotify\.com/track/[^"']+["'][^>]*>(.*?)</a>`)
+	geniusSongLinkRe    = regexp.MustCompile(`(?is)<a\b[^>]*href\s*=\s*["']https?://genius\.com/[^"']+["'][^>]*>(.*?)</a>`)
+	youtubeTitleTrimRe  = regexp.MustCompile(`(?i)\s*[-–—|]\s*youtube\s*$`)
+	trailingStatsTailRe = regexp.MustCompile(`\s+\d[\d,]*(?:\s+\d[\d,]*)+$`)
+	citationTailRe      = regexp.MustCompile(`\s*(?:"|')?\s*(?:↑\s*)?\[\s*\d+\s*\]\s*$`)
+	citationOpenTailRe  = regexp.MustCompile(`\s*(?:"|')?\s*(?:↑\s*)?\[\s*\d+\s*$`)
 )
 
 var noiseKeywords = []string{
@@ -56,6 +70,24 @@ var noiseKeywords = []string{
 	"megamix",
 	"medley",
 	"tribute",
+	"more stories",
+	"apple music",
+	"official store",
+	"chart history",
+	"much appreciated",
+	"any thoughts",
+	"forum",
+	"thread",
+	"illustration",
+	"final thoughts",
+	"all rights administered",
+	"music & licensing",
+	"song list",
+	"greatest of all time hot 100 songs",
+	"greatest of all time billboard 200 albums",
+	"trusted",
+	"songs ranked",
+	"best songs of",
 }
 
 func Wikitable(pageHTML string) []Result {
@@ -67,8 +99,16 @@ func Wikitable(pageHTML string) []Result {
 			continue
 		}
 
-		headers := thRe.FindAllStringSubmatch(rows[0][1], -1)
-		if len(headers) == 0 {
+		headerRow := -1
+		var headers [][]string
+		for rowIndex, row := range rows {
+			headers = thRe.FindAllStringSubmatch(row[1], -1)
+			if len(headers) > 0 {
+				headerRow = rowIndex
+				break
+			}
+		}
+		if headerRow < 0 || len(headers) == 0 {
 			continue
 		}
 
@@ -88,7 +128,7 @@ func Wikitable(pageHTML string) []Result {
 			continue
 		}
 
-		for _, row := range rows[1:] {
+		for _, row := range rows[headerRow+1:] {
 			cells := cellRe.FindAllStringSubmatch(row[1], -1)
 			if artistCol >= len(cells) || titleCol >= len(cells) {
 				continue
@@ -152,7 +192,7 @@ func Discogs(pageHTML string) []Result {
 }
 
 func MusicBrainz(pageHTML string) []Result {
-	releaseArtist := ogTitleArtist(pageHTML)
+	releaseArtist := musicBrainzReleaseArtist(pageHTML)
 	results := make([]Result, 0)
 
 	rows := trWithTitleRe.FindAllString(pageHTML, -1)
@@ -188,50 +228,60 @@ func MusicBrainz(pageHTML string) []Result {
 }
 
 func Generic(pageHTML string) []Result {
-	text := strings.NewReplacer(
-		"<br>", "\n",
-		"<br/>", "\n",
-		"<br />", "\n",
-		"</p>", "\n",
-		"</li>", "\n",
-		"</tr>", "\n",
-	).Replace(pageHTML)
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	text = strings.ReplaceAll(text, "&nbsp;", " ")
-	text = tagRe.ReplaceAllString(text, " ")
-	text = html.UnescapeString(text)
-
+	text := visibleText(pageHTML)
 	results := make([]Result, 0)
 	for _, rawLine := range strings.Split(text, "\n") {
 		line := strings.Join(strings.Fields(rawLine), " ")
-		if line == "" {
+		if line == "" || looksLikeCodeLine(line) || looksLikeBoilerplate(line) {
 			continue
 		}
 
-		var artist, title string
-		switch {
-		case lineEmDashRe.MatchString(line):
-			matches := lineEmDashRe.FindStringSubmatch(line)
-			artist = strings.TrimSpace(matches[1])
-			title = strings.TrimSpace(matches[2])
-		case lineHyphenRe.MatchString(line):
-			matches := lineHyphenRe.FindStringSubmatch(line)
-			left := strings.TrimSpace(matches[1])
-			right := strings.TrimSpace(matches[2])
-			if timestampRe.MatchString(left) && timestampRe.MatchString(right) {
-				continue
-			}
-			artist = left
-			title = right
-		case lineByRe.MatchString(line):
-			matches := lineByRe.FindStringSubmatch(line)
-			title = strings.TrimSpace(matches[1])
-			artist = strings.TrimSpace(matches[2])
-		default:
+		artist, title, ok := extractPairFromLine(line)
+		if !ok {
 			continue
 		}
 
+		artist = normalizeCandidateField(artist)
+		title = normalizeCandidateField(title)
+		if looksLikeTimestampOrDate(artist) || looksLikeTimestampOrDate(title) {
+			continue
+		}
+		if !fieldLengthOK(artist) || !fieldLengthOK(title) {
+			continue
+		}
+		if hasNoise(artist) || hasNoise(title) {
+			continue
+		}
+		if looksLikeBoilerplate(artist) || looksLikeBoilerplate(title) {
+			continue
+		}
+
+		results = append(results, Result{Artist: artist, Title: title})
+	}
+
+	return results
+}
+
+func Billboard(pageHTML string) []Result {
+	text := visibleText(pageHTML)
+	results := make([]Result, 0)
+
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.Join(strings.Fields(rawLine), " ")
+		if line == "" || looksLikeCodeLine(line) || looksLikeBoilerplate(line) {
+			continue
+		}
+		if !lineRankedRe.MatchString(line) {
+			continue
+		}
+
+		matches := lineRankedRe.FindStringSubmatch(line)
+		if len(matches) < 3 {
+			continue
+		}
+
+		artist := normalizeCandidateField(matches[1])
+		title := normalizeCandidateField(matches[2])
 		if !fieldLengthOK(artist) || !fieldLengthOK(title) {
 			continue
 		}
@@ -242,11 +292,221 @@ func Generic(pageHTML string) []Result {
 		results = append(results, Result{Artist: artist, Title: title})
 	}
 
+	if len(results) == 0 {
+		return Generic(pageHTML)
+	}
 	return results
 }
 
+func Kworb(pageHTML string) []Result {
+	table := kworbSongTableRe.FindStringSubmatch(pageHTML)
+	if len(table) < 2 {
+		return Generic(pageHTML)
+	}
+
+	artist := kworbArtist(pageHTML)
+
+	results := make([]Result, 0)
+	for _, match := range kworbTrackAnchorRe.FindAllStringSubmatch(table[1], -1) {
+		title := normalizeCandidateField(cleanText(match[1]))
+		if title == "" || !fieldLengthOK(title) || hasNoise(title) || looksLikeBoilerplate(title) {
+			continue
+		}
+		if artist == "" {
+			continue
+		}
+		results = append(results, Result{Artist: artist, Title: title})
+	}
+
+	if len(results) == 0 {
+		return Generic(pageHTML)
+	}
+
+	return results
+}
+
+func GeniusSongs(pageHTML string) []Result {
+	results := make([]Result, 0)
+	for _, match := range geniusSongLinkRe.FindAllStringSubmatch(pageHTML, -1) {
+		text := normalizeCandidateField(cleanText(match[1]))
+		if text == "" || looksLikeCodeLine(text) || looksLikeBoilerplate(text) {
+			continue
+		}
+		artist, title, ok := extractPairFromLine(text)
+		if !ok {
+			continue
+		}
+		artist = normalizeCandidateField(artist)
+		title = normalizeCandidateField(title)
+		if !fieldLengthOK(artist) || !fieldLengthOK(title) {
+			continue
+		}
+		if hasNoise(artist) || hasNoise(title) {
+			continue
+		}
+		results = append(results, Result{Artist: artist, Title: title})
+	}
+
+	if len(results) == 0 {
+		return Generic(pageHTML)
+	}
+	return results
+}
+
+func YouTube(pageHTML string) []Result {
+	match := titleTagRe.FindStringSubmatch(pageHTML)
+	if len(match) < 2 {
+		return Generic(pageHTML)
+	}
+
+	title := normalizeCandidateField(cleanText(match[1]))
+	title = youtubeTitleTrimRe.ReplaceAllString(title, "")
+	artist, trackTitle, ok := extractPairFromLine(title)
+	if !ok {
+		return []Result{}
+	}
+
+	artist = normalizeCandidateField(artist)
+	trackTitle = normalizeCandidateField(trackTitle)
+	if !fieldLengthOK(artist) || !fieldLengthOK(trackTitle) {
+		return []Result{}
+	}
+	if hasNoise(artist) || hasNoise(trackTitle) {
+		return []Result{}
+	}
+
+	return []Result{{Artist: artist, Title: trackTitle}}
+}
+
+func visibleText(pageHTML string) string {
+	cleaned := stripNonContentBlocks(pageHTML)
+	text := strings.NewReplacer(
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+		"</p>", "\n",
+		"</li>", "\n",
+		"</tr>", "\n",
+		"</div>", "\n",
+		"</h1>", "\n",
+		"</h2>", "\n",
+		"</h3>", "\n",
+	).Replace(cleaned)
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	text = strings.ReplaceAll(text, "&nbsp;", " ")
+	text = tagRe.ReplaceAllString(text, " ")
+	text = html.UnescapeString(text)
+	return text
+}
+
+func extractPairFromLine(line string) (artist string, title string, ok bool) {
+	line = strings.TrimSpace(line)
+	switch {
+	case lineEmDashRe.MatchString(line):
+		matches := lineEmDashRe.FindStringSubmatch(line)
+		return strings.TrimSpace(matches[1]), strings.TrimSpace(matches[2]), true
+	case lineHyphenRe.MatchString(line):
+		matches := lineHyphenRe.FindStringSubmatch(line)
+		left := strings.TrimSpace(matches[1])
+		right := strings.TrimSpace(matches[2])
+		if timestampRe.MatchString(left) && timestampRe.MatchString(right) {
+			return "", "", false
+		}
+		return left, right, true
+	case lineByRe.MatchString(line):
+		matches := lineByRe.FindStringSubmatch(line)
+		return strings.TrimSpace(matches[2]), strings.TrimSpace(matches[1]), true
+	default:
+		return "", "", false
+	}
+}
+
+func normalizeCandidateField(s string) string {
+	s = normalizeField(s)
+	s = rankPrefixRe.ReplaceAllString(s, "")
+	s = strings.Map(func(r rune) rune {
+		if r < 32 {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.ReplaceAll(s, "�", "")
+	s = strings.TrimPrefix(s, "*")
+	s = strings.TrimSpace(s)
+	s = citationTailRe.ReplaceAllString(s, "")
+	s = citationOpenTailRe.ReplaceAllString(s, "")
+	s = trailingStatsTailRe.ReplaceAllString(s, "")
+	s = strings.TrimSpace(strings.TrimSuffix(s, "*"))
+	return normalizeField(s)
+}
+
+func kworbArtist(pageHTML string) string {
+	titleMatch := titleTagRe.FindStringSubmatch(pageHTML)
+	if len(titleMatch) < 2 {
+		return ""
+	}
+	title := cleanText(titleMatch[1])
+	parts := strings.Split(title, " - ")
+	if len(parts) < 2 {
+		return ""
+	}
+	artist := normalizeCandidateField(parts[0])
+	if !fieldLengthOK(artist) || looksLikeBoilerplate(artist) {
+		return ""
+	}
+	return artist
+}
+
+func looksLikeTimestampOrDate(s string) bool {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	if lower == "" {
+		return false
+	}
+	if timeOfDayRe.MatchString(lower) {
+		return true
+	}
+	if monthDateRe.MatchString(lower) {
+		return true
+	}
+	return false
+}
+
+func musicBrainzReleaseArtist(pageHTML string) string {
+	if artist := ogTitleArtist(pageHTML); artist != "" {
+		return artist
+	}
+
+	titleMatch := titleTagRe.FindStringSubmatch(pageHTML)
+	if len(titleMatch) > 1 {
+		title := cleanText(titleMatch[1])
+		if strings.Contains(title, " by ") {
+			parts := strings.Split(title, " by ")
+			artistPart := strings.TrimSpace(parts[len(parts)-1])
+			artistPart = strings.TrimSuffix(artistPart, " - MusicBrainz")
+			artistPart = normalizeCandidateField(artistPart)
+			if fieldLengthOK(artistPart) {
+				return artistPart
+			}
+		}
+	}
+
+	h1Match := h1Re.FindStringSubmatch(pageHTML)
+	if len(h1Match) > 1 {
+		text := normalizeCandidateField(cleanText(h1Match[1]))
+		if fieldLengthOK(text) && !looksLikeBoilerplate(text) {
+			return text
+		}
+	}
+
+	return ""
+}
+
 func cleanText(s string) string {
+	s = stripNonContentBlocks(s)
 	s = strings.ReplaceAll(s, "&nbsp;", " ")
+	s = strings.ReplaceAll(s, "↑", " ")
+	s = strings.ReplaceAll(s, "↵", " ")
 	s = tagRe.ReplaceAllString(s, " ")
 	s = html.UnescapeString(s)
 	fields := strings.Fields(s)
@@ -307,6 +567,14 @@ func fieldLengthOK(s string) bool {
 }
 
 func normalizeField(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 || r == '\uFFFD' {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	s = strings.Trim(s, " \t\n\r\"'`“”‘’{}<>•*|\\/;,~")
 	s = strings.TrimSpace(s)
 	if len(s) >= 2 {
 		if (strings.HasPrefix(s, `"`) && strings.HasSuffix(s, `"`)) ||

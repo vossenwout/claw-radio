@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -37,6 +38,7 @@ func (p *YtDlpProvider) Resolve(seed, cacheDir string) (string, error) {
 	if candidate.ID != "" {
 		cachedPath := filepath.Join(cacheDir, candidate.ID+".opus")
 		if info, statErr := os.Stat(cachedPath); statErr == nil && !info.IsDir() {
+			_ = writeTrackMetaSidecar(cachedPath, trimmedSeed, candidate)
 			return cachedPath, nil
 		}
 	}
@@ -53,6 +55,7 @@ func (p *YtDlpProvider) Resolve(seed, cacheDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("download seed %q: %w", trimmedSeed, err)
 	}
+	_ = writeTrackMetaSidecar(path, trimmedSeed, candidate)
 	return path, nil
 }
 
@@ -66,4 +69,45 @@ func isHTTPURL(raw string) bool {
 		return false
 	}
 	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+type trackMetaSidecar struct {
+	Seed    string `json:"seed"`
+	Artist  string `json:"artist,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Display string `json:"display,omitempty"`
+	ID      string `json:"id,omitempty"`
+}
+
+func writeTrackMetaSidecar(audioPath, seed string, candidate *ytdlp.Candidate) error {
+	trimmedPath := strings.TrimSpace(audioPath)
+	if trimmedPath == "" {
+		return nil
+	}
+
+	meta := trackMetaSidecar{Seed: strings.TrimSpace(seed)}
+	artist, title := splitSeed(meta.Seed)
+	meta.Artist = artist
+	meta.Title = title
+	if meta.Seed != "" {
+		meta.Display = meta.Seed
+	}
+	if candidate != nil {
+		meta.ID = strings.TrimSpace(candidate.ID)
+	}
+
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	sidecarPath := trimmedPath + ".meta.json"
+	return os.WriteFile(sidecarPath, data, 0o644)
+}
+
+func splitSeed(seed string) (string, string) {
+	parts := strings.SplitN(strings.TrimSpace(seed), " - ", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 }

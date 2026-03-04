@@ -28,18 +28,13 @@ func TestPlaybackCommandsExitFiveWhenMPVNotRunning(t *testing.T) {
 		},
 	}
 
-	resolver := &fakePlaybackResolver{path: "/tmp/resolved.opus"}
-	restore := withPlaybackTestHooks(cfg, resolver)
+	restore := withPlaybackTestHooks(cfg)
 	defer restore()
 
 	tests := []struct {
 		name string
 		args []string
 	}{
-		{name: "play", args: []string{"play", "Daft Punk - Get Lucky"}},
-		{name: "queue", args: []string{"queue", "https://example.com/song"}},
-		{name: "pause", args: []string{"pause"}},
-		{name: "resume", args: []string{"resume"}},
 		{name: "next", args: []string{"next"}},
 	}
 
@@ -52,149 +47,6 @@ func TestPlaybackCommandsExitFiveWhenMPVNotRunning(t *testing.T) {
 	}
 }
 
-func TestPlayCallsInsertNextThenPlaylistNext(t *testing.T) {
-	socketPath := makePlaybackSocketPath(t, "play")
-	mock := startPlaybackMPVServer(t, socketPath)
-
-	cfg := &config.Config{
-		MPV: config.MPVConfig{Socket: socketPath},
-		YtDlp: config.BinaryConfig{
-			Binary: "/usr/bin/yt-dlp",
-		},
-		Station: config.StationConfig{
-			CacheDir: t.TempDir(),
-		},
-	}
-	resolver := &fakePlaybackResolver{path: "/tmp/get-lucky.opus"}
-	restore := withPlaybackTestHooks(cfg, resolver)
-	defer restore()
-
-	if err := executeCommandForTest(t, "play", "Daft Punk - Get Lucky"); err != nil {
-		t.Fatalf("play failed: %v", err)
-	}
-
-	mock.wait(t)
-	if len(resolver.seeds) != 1 || resolver.seeds[0] != "Daft Punk - Get Lucky" {
-		t.Fatalf("resolver called with %v, want [Daft Punk - Get Lucky]", resolver.seeds)
-	}
-
-	want := [][]interface{}{
-		{"loadfile", "/tmp/get-lucky.opus", "append"},
-		{"get_property", "playlist-pos"},
-		{"get_property", "playlist-count"},
-		{"playlist-move", float64(1), float64(1)},
-		{"playlist-next"},
-	}
-	if !reflect.DeepEqual(mock.commands(), want) {
-		t.Fatalf("unexpected mpv command sequence:\n got: %#v\nwant: %#v", mock.commands(), want)
-	}
-}
-
-func TestQueueWithDirectURLResolvesURLAndAppends(t *testing.T) {
-	socketPath := makePlaybackSocketPath(t, "queue-url")
-	mock := startPlaybackMPVServer(t, socketPath)
-
-	cfg := &config.Config{
-		MPV: config.MPVConfig{Socket: socketPath},
-		Station: config.StationConfig{
-			CacheDir: t.TempDir(),
-		},
-	}
-	resolver := &fakePlaybackResolver{path: "/tmp/from-url.opus"}
-	restore := withPlaybackTestHooks(cfg, resolver)
-	defer restore()
-
-	url := "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-	if err := executeCommandForTest(t, "queue", url); err != nil {
-		t.Fatalf("queue failed: %v", err)
-	}
-
-	mock.wait(t)
-	if len(resolver.seeds) != 1 || resolver.seeds[0] != url {
-		t.Fatalf("resolver called with %v, want [%s]", resolver.seeds, url)
-	}
-
-	want := [][]interface{}{
-		{"loadfile", "/tmp/from-url.opus", "append"},
-	}
-	if !reflect.DeepEqual(mock.commands(), want) {
-		t.Fatalf("unexpected mpv commands:\n got: %#v\nwant: %#v", mock.commands(), want)
-	}
-}
-
-func TestQueueWithQueryAppendsResolvedPath(t *testing.T) {
-	socketPath := makePlaybackSocketPath(t, "queue-query")
-	mock := startPlaybackMPVServer(t, socketPath)
-
-	cfg := &config.Config{
-		MPV: config.MPVConfig{Socket: socketPath},
-		Station: config.StationConfig{
-			CacheDir: t.TempDir(),
-		},
-	}
-	resolver := &fakePlaybackResolver{path: "/tmp/query-track.opus"}
-	restore := withPlaybackTestHooks(cfg, resolver)
-	defer restore()
-
-	if err := executeCommandForTest(t, "queue", "Toto - Africa"); err != nil {
-		t.Fatalf("queue failed: %v", err)
-	}
-
-	mock.wait(t)
-	want := [][]interface{}{
-		{"loadfile", "/tmp/query-track.opus", "append"},
-	}
-	if !reflect.DeepEqual(mock.commands(), want) {
-		t.Fatalf("unexpected mpv commands:\n got: %#v\nwant: %#v", mock.commands(), want)
-	}
-}
-
-func TestPauseSendsSetPropertyPauseTrue(t *testing.T) {
-	socketPath := makePlaybackSocketPath(t, "pause")
-	mock := startPlaybackMPVServer(t, socketPath)
-
-	cfg := &config.Config{
-		MPV: config.MPVConfig{Socket: socketPath},
-	}
-	restore := withPlaybackTestHooks(cfg, &fakePlaybackResolver{})
-	defer restore()
-
-	if err := executeCommandForTest(t, "pause"); err != nil {
-		t.Fatalf("pause failed: %v", err)
-	}
-
-	mock.wait(t)
-	want := [][]interface{}{
-		{"set_property", "pause", true},
-	}
-	if !reflect.DeepEqual(mock.commands(), want) {
-		t.Fatalf("unexpected mpv commands:\n got: %#v\nwant: %#v", mock.commands(), want)
-	}
-}
-
-func TestResumeSendsSetPropertyPauseFalse(t *testing.T) {
-	socketPath := makePlaybackSocketPath(t, "resume")
-	mock := startPlaybackMPVServer(t, socketPath)
-
-	cfg := &config.Config{
-		MPV: config.MPVConfig{Socket: socketPath},
-	}
-	restore := withPlaybackTestHooks(cfg, &fakePlaybackResolver{})
-	defer restore()
-
-	if err := executeCommandForTest(t, "resume"); err != nil {
-		t.Fatalf("resume failed: %v", err)
-	}
-
-	mock.wait(t)
-	want := [][]interface{}{
-		{"set_property", "pause", false},
-	}
-	if !reflect.DeepEqual(mock.commands(), want) {
-		t.Fatalf("unexpected mpv commands:\n got: %#v\nwant: %#v", mock.commands(), want)
-	}
-}
-
 func TestNextSendsPlaylistNext(t *testing.T) {
 	socketPath := makePlaybackSocketPath(t, "next")
 	mock := startPlaybackMPVServer(t, socketPath)
@@ -202,7 +54,7 @@ func TestNextSendsPlaylistNext(t *testing.T) {
 	cfg := &config.Config{
 		MPV: config.MPVConfig{Socket: socketPath},
 	}
-	restore := withPlaybackTestHooks(cfg, &fakePlaybackResolver{})
+	restore := withPlaybackTestHooks(cfg)
 	defer restore()
 
 	if err := executeCommandForTest(t, "next"); err != nil {
@@ -218,24 +70,9 @@ func TestNextSendsPlaylistNext(t *testing.T) {
 	}
 }
 
-type fakePlaybackResolver struct {
-	path  string
-	err   error
-	seeds []string
-}
-
-func (f *fakePlaybackResolver) Resolve(seed, _ string) (string, error) {
-	f.seeds = append(f.seeds, seed)
-	if f.err != nil {
-		return "", f.err
-	}
-	return f.path, nil
-}
-
-func withPlaybackTestHooks(cfg *config.Config, resolver playbackResolver) func() {
+func withPlaybackTestHooks(cfg *config.Config) func() {
 	origLoad := loadConfigFn
 	origDial := dialPlaybackClientFn
-	origResolver := newPlaybackResolverFn
 
 	loadConfigFn = func() (*config.Config, error) {
 		copy := *cfg
@@ -244,14 +81,10 @@ func withPlaybackTestHooks(cfg *config.Config, resolver playbackResolver) func()
 	dialPlaybackClientFn = func(socketPath string) (playbackClient, error) {
 		return mpv.Dial(socketPath)
 	}
-	newPlaybackResolverFn = func(string) playbackResolver {
-		return resolver
-	}
 
 	return func() {
 		loadConfigFn = origLoad
 		dialPlaybackClientFn = origDial
-		newPlaybackResolverFn = origResolver
 	}
 }
 

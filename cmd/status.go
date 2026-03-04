@@ -197,9 +197,7 @@ func readPlaybackStatus(client statusMPVClient) *statusPlayback {
 		playback.State = "paused"
 	}
 
-	if title, ok := readStringProperty(client, "media-title"); ok {
-		playback.Title = title
-	}
+	playback.Title = resolvePlaybackTitle(client)
 	if timePos, ok := readFloatProperty(client, "time-pos"); ok {
 		playback.TimePos = timePos
 	}

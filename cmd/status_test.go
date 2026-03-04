@@ -97,6 +97,205 @@ func TestStatusJSONReportsRunningEngineAndPlaybackFields(t *testing.T) {
 	}
 }
 
+func TestStatusJSONUsesMetadataTitleWhenMediaTitleLooksLikeFilename(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: filepath.Join(tmp, "mock.sock"),
+		},
+		Station: config.StationConfig{
+			StateDir:   filepath.Join(tmp, "state"),
+			QueueDepth: 5,
+		},
+		TTS: config.TTSConfig{
+			Socket: filepath.Join(tmp, "missing-tts.sock"),
+		},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 101)
+
+	metadata := mustRawJSON(t, map[string]interface{}{
+		"artist": "Kendrick Lamar",
+		"title":  "Money Trees",
+	})
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, "tvTRZJ-4EyI.opus"),
+			"metadata":    metadata,
+			"time-pos":    mustRawJSON(t, 47.3),
+			"duration":    mustRawJSON(t, 211.0),
+			"volume":      mustRawJSON(t, 30),
+		},
+		playlistCount: 4,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool {
+		return pid == 101
+	})
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil {
+		t.Fatalf("playback missing from output: %s", stdout)
+	}
+	if out.Playback.Title != "Kendrick Lamar - Money Trees" {
+		t.Fatalf("playback.title = %q, want %q", out.Playback.Title, "Kendrick Lamar - Money Trees")
+	}
+}
+
+func TestStatusJSONTrimsMediaFilenameFallback(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: filepath.Join(tmp, "mock.sock"),
+		},
+		Station: config.StationConfig{
+			StateDir:   filepath.Join(tmp, "state"),
+			QueueDepth: 5,
+		},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 102)
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, "tvTRZJ-4EyI.opus"),
+			"time-pos":    mustRawJSON(t, 1.0),
+			"duration":    mustRawJSON(t, 211.0),
+			"volume":      mustRawJSON(t, 30),
+		},
+		playlistCount: 4,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool {
+		return pid == 102
+	})
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil {
+		t.Fatalf("playback missing from output: %s", stdout)
+	}
+	if out.Playback.Title != "tvTRZJ-4EyI" {
+		t.Fatalf("playback.title = %q, want %q", out.Playback.Title, "tvTRZJ-4EyI")
+	}
+}
+
+func TestStatusJSONUsesSidecarSeedTitleFallback(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	audioPath := filepath.Join(cacheDir, "tvTRZJ-4EyI.opus")
+	if err := os.WriteFile(audioPath+".meta.json", mustRawJSON(t, map[string]string{
+		"seed":    "Kendrick Lamar - Money Trees",
+		"display": "Kendrick Lamar - Money Trees",
+	}), 0o644); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV: config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{
+			StateDir:   filepath.Join(tmp, "state"),
+			QueueDepth: 5,
+		},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 103)
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, "tvTRZJ-4EyI.opus"),
+			"path":        mustRawJSON(t, audioPath),
+			"time-pos":    mustRawJSON(t, 10.0),
+			"duration":    mustRawJSON(t, 211.0),
+			"volume":      mustRawJSON(t, 30),
+		},
+		playlistCount: 4,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 103 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil {
+		t.Fatalf("playback missing from output: %s", stdout)
+	}
+	if out.Playback.Title != "Kendrick Lamar - Money Trees" {
+		t.Fatalf("playback.title = %q, want %q", out.Playback.Title, "Kendrick Lamar - Money Trees")
+	}
+}
+
+func TestStatusJSONUsesYouTubeOEmbedFallback(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		MPV: config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{
+			StateDir:   filepath.Join(tmp, "state"),
+			QueueDepth: 5,
+		},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 104)
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, "tvTRZJ-4EyI.opus"),
+			"time-pos":    mustRawJSON(t, 10.0),
+			"duration":    mustRawJSON(t, 211.0),
+			"volume":      mustRawJSON(t, 30),
+		},
+		playlistCount: 4,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 104 })
+	defer restore()
+
+	origOEmbed := fetchYouTubeOEmbedFn
+	fetchYouTubeOEmbedFn = func(videoID string) (string, string, error) {
+		if videoID != "tvTRZJ-4EyI" {
+			t.Fatalf("video id = %q, want %q", videoID, "tvTRZJ-4EyI")
+		}
+		return "Kendrick Lamar", "Money Trees", nil
+	}
+	defer func() { fetchYouTubeOEmbedFn = origOEmbed }()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil {
+		t.Fatalf("playback missing from output: %s", stdout)
+	}
+	if out.Playback.Title != "Kendrick Lamar - Money Trees" {
+		t.Fatalf("playback.title = %q, want %q", out.Playback.Title, "Kendrick Lamar - Money Trees")
+	}
+}
+
 func TestStatusJSONIncludesStationSeedCount(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")
@@ -349,6 +548,7 @@ func withStatusTestHooks(
 	origDial := dialStatusMPVClientFn
 	origPIDBase := pidBaseDir
 	origProcRunning := statusProcessRunningFn
+	origOEmbed := fetchYouTubeOEmbedFn
 
 	loadConfigFn = func() (*config.Config, error) {
 		copy := *cfg
@@ -369,12 +569,14 @@ func withStatusTestHooks(
 	} else {
 		statusProcessRunningFn = func(int) bool { return false }
 	}
+	fetchYouTubeOEmbedFn = func(string) (string, string, error) { return "", "", fmt.Errorf("disabled in tests") }
 
 	return func() {
 		loadConfigFn = origLoad
 		dialStatusMPVClientFn = origDial
 		pidBaseDir = origPIDBase
 		statusProcessRunningFn = origProcRunning
+		fetchYouTubeOEmbedFn = origOEmbed
 	}
 }
 

@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	defaultMPVSocket      = "/tmp/claw-radio-mpv.sock"
-	defaultTTSSocket      = "/tmp/claw-radio-tts.sock"
-	defaultSearchSearxURL = "http://localhost:8888"
+	defaultMPVSocket       = "/tmp/claw-radio-mpv.sock"
+	defaultTTSSocket       = "/tmp/claw-radio-tts.sock"
+	defaultSearchSearxURL  = "http://localhost:8888"
+	defaultSearchUserAgent = "claw-radio/1.0 (+https://github.com/vossenwout/claw-radio)"
 )
 
 type Config struct {
@@ -27,7 +28,24 @@ type Config struct {
 }
 
 type SearchConfig struct {
-	SearxNGURL string `json:"searxng_url"`
+	SearxNGURL            string            `json:"searxng_url"`
+	MaxSearchHits         int               `json:"max_search_hits"`
+	MaxPages              int               `json:"max_pages"`
+	FetchConcurrency      int               `json:"fetch_concurrency"`
+	RequestTimeoutSeconds int               `json:"request_timeout_seconds"`
+	UserAgent             string            `json:"user_agent"`
+	EnableQueryExpansion  bool              `json:"enable_query_expansion"`
+	Debug                 bool              `json:"debug"`
+	Engines               []string          `json:"engines"`
+	ModeEngines           SearchModeEngines `json:"mode_engines"`
+}
+
+type SearchModeEngines struct {
+	Raw        []string `json:"raw"`
+	ArtistTop  []string `json:"artist_top"`
+	ArtistYear []string `json:"artist_year"`
+	ChartYear  []string `json:"chart_year"`
+	GenreTop   []string `json:"genre_top"`
 }
 
 type MPVConfig struct {
@@ -99,7 +117,22 @@ func defaultConfig() Config {
 			StateDir:   "~/.local/share/claw-radio/state",
 		},
 		Search: SearchConfig{
-			SearxNGURL: defaultSearchSearxURL,
+			SearxNGURL:            defaultSearchSearxURL,
+			MaxSearchHits:         20,
+			MaxPages:              20,
+			FetchConcurrency:      6,
+			RequestTimeoutSeconds: 30,
+			UserAgent:             defaultSearchUserAgent,
+			EnableQueryExpansion:  false,
+			Debug:                 false,
+			Engines:               []string{},
+			ModeEngines: SearchModeEngines{
+				Raw:        []string{},
+				ArtistTop:  []string{},
+				ArtistYear: []string{},
+				ChartYear:  []string{},
+				GenreTop:   []string{},
+			},
 		},
 	}
 }

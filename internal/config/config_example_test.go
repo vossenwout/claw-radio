@@ -25,7 +25,22 @@ type configExampleFile struct {
 		QueueDepth int `json:"queue_depth"`
 	} `json:"station"`
 	Search struct {
-		SearxNGURL string `json:"searxng_url"`
+		SearxNGURL            string   `json:"searxng_url"`
+		MaxSearchHits         int      `json:"max_search_hits"`
+		MaxPages              int      `json:"max_pages"`
+		FetchConcurrency      int      `json:"fetch_concurrency"`
+		RequestTimeoutSeconds int      `json:"request_timeout_seconds"`
+		UserAgent             string   `json:"user_agent"`
+		EnableQueryExpansion  bool     `json:"enable_query_expansion"`
+		Debug                 bool     `json:"debug"`
+		Engines               []string `json:"engines"`
+		ModeEngines           struct {
+			Raw        []string `json:"raw"`
+			ArtistTop  []string `json:"artist_top"`
+			ArtistYear []string `json:"artist_year"`
+			ChartYear  []string `json:"chart_year"`
+			GenreTop   []string `json:"genre_top"`
+		} `json:"mode_engines"`
 	} `json:"search"`
 }
 
@@ -91,6 +106,33 @@ func TestConfigExampleContainsExpectedKeysAndDefaults(t *testing.T) {
 	}
 	if cfg.Search.SearxNGURL != defaultSearchSearxURL {
 		t.Fatalf("expected search.searxng_url to be %q, got %q", defaultSearchSearxURL, cfg.Search.SearxNGURL)
+	}
+	if cfg.Search.MaxSearchHits != 20 {
+		t.Fatalf("expected search.max_search_hits to be 20, got %d", cfg.Search.MaxSearchHits)
+	}
+	if cfg.Search.MaxPages != 20 {
+		t.Fatalf("expected search.max_pages to be 20, got %d", cfg.Search.MaxPages)
+	}
+	if cfg.Search.FetchConcurrency != 6 {
+		t.Fatalf("expected search.fetch_concurrency to be 6, got %d", cfg.Search.FetchConcurrency)
+	}
+	if cfg.Search.RequestTimeoutSeconds != 30 {
+		t.Fatalf("expected search.request_timeout_seconds to be 30, got %d", cfg.Search.RequestTimeoutSeconds)
+	}
+	if cfg.Search.UserAgent != defaultSearchUserAgent {
+		t.Fatalf("expected search.user_agent to be %q, got %q", defaultSearchUserAgent, cfg.Search.UserAgent)
+	}
+	if cfg.Search.EnableQueryExpansion {
+		t.Fatalf("expected search.enable_query_expansion to be false")
+	}
+	if cfg.Search.Debug {
+		t.Fatalf("expected search.debug to be false")
+	}
+	if len(cfg.Search.Engines) != 0 {
+		t.Fatalf("expected search.engines to be empty array by default, got %v", cfg.Search.Engines)
+	}
+	if len(cfg.Search.ModeEngines.Raw) != 0 || len(cfg.Search.ModeEngines.ArtistTop) != 0 || len(cfg.Search.ModeEngines.ArtistYear) != 0 || len(cfg.Search.ModeEngines.ChartYear) != 0 || len(cfg.Search.ModeEngines.GenreTop) != 0 {
+		t.Fatalf("expected search.mode_engines lists to be empty arrays by default, got %+v", cfg.Search.ModeEngines)
 	}
 }
 
