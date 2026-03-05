@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/vossenwout/claw-radio/internal/config"
 )
 
@@ -302,6 +303,7 @@ func withEngineTestHooks(cfg *config.Config, pidDir string) func() {
 	origWait := waitForSocketFn
 	origExe := executablePathFn
 	origPID := pidBaseDir
+	origWaitReady := waitForStartReadyFn
 
 	loadConfigFn = func() (*config.Config, error) {
 		copy := *cfg
@@ -311,6 +313,7 @@ func withEngineTestHooks(cfg *config.Config, pidDir string) func() {
 	waitForSocketFn = waitForSocket
 	executablePathFn = func() (string, error) { return "/test/self", nil }
 	pidBaseDir = pidDir
+	waitForStartReadyFn = func(*cobra.Command, *config.Config) error { return nil }
 
 	return func() {
 		loadConfigFn = origLoad
@@ -318,6 +321,7 @@ func withEngineTestHooks(cfg *config.Config, pidDir string) func() {
 		waitForSocketFn = origWait
 		executablePathFn = origExe
 		pidBaseDir = origPID
+		waitForStartReadyFn = origWaitReady
 	}
 }
 

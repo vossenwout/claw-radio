@@ -38,6 +38,63 @@ func TestPollReturnsTimeoutEvent(t *testing.T) {
 	if event["event"] != "timeout" {
 		t.Fatalf("event = %v, want timeout", event["event"])
 	}
+	if event["action"] != "wait" {
+		t.Fatalf("action = %v, want wait", event["action"])
+	}
+}
+
+func TestPollReturnsBufferingCueWhenRadioBuffering(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(stateDir, "mock.sock")},
+		Station: config.StationConfig{StateDir: stateDir},
+	}
+	restoreRuntime := withRunningRuntimeForPollTests(t)
+	defer restoreRuntime()
+
+	stationJSON := `{"label":"","seeds":["Party in the usa - miley cyrus"]}`
+	if err := os.WriteFile(filepath.Join(stateDir, "station.json"), []byte(stationJSON), 0o644); err != nil {
+		t.Fatalf("write station.json: %v", err)
+	}
+
+	origLoad := loadConfigFn
+	loadConfigFn = func() (*config.Config, error) {
+		copy := *cfg
+		return &copy, nil
+	}
+	defer func() { loadConfigFn = origLoad }()
+
+	origDial := dialStatusMPVClientFn
+	dialStatusMPVClientFn = func(socketPath string) (statusMPVClient, error) {
+		return &fakeStatusMPVClient{
+			props: map[string]json.RawMessage{
+				"pause":       mustRawJSON(t, false),
+				"media-title": mustRawJSON(t, ""),
+				"time-pos":    mustRawJSON(t, 0),
+				"duration":    mustRawJSON(t, 0),
+				"volume":      mustRawJSON(t, 100),
+				"playlist":    mustRawJSON(t, []map[string]interface{}{}),
+			},
+			playlistCount: 0,
+		}, nil
+	}
+	defer func() { dialStatusMPVClientFn = origDial }()
+
+	err, stdout, _ := executeCommandWithOutputForTest("poll", "--timeout", "30ms")
+	if err != nil {
+		t.Fatalf("poll failed: %v", err)
+	}
+
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(stdout), &event); err != nil {
+		t.Fatalf("parse poll json: %v", err)
+	}
+	if event["event"] != "buffering" {
+		t.Fatalf("event = %v, want buffering", event["event"])
+	}
+	if event["action"] != "wait" {
+		t.Fatalf("action = %v, want wait", event["action"])
+	}
 }
 
 func TestPollReturnsQueuedEvent(t *testing.T) {
@@ -63,8 +120,15 @@ func TestPollReturnsQueuedEvent(t *testing.T) {
 		t.Fatalf("poll failed: %v", err)
 	}
 
-	if !strings.Contains(stdout, "queue_low") {
-		t.Fatalf("stdout = %q, want queue_low event", stdout)
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(stdout), &event); err != nil {
+		t.Fatalf("parse poll json: %v", err)
+	}
+	if event["event"] != "queue_low" {
+		t.Fatalf("event = %v, want queue_low", event["event"])
+	}
+	if event["action"] != "add_songs" {
+		t.Fatalf("action = %v, want add_songs", event["action"])
 	}
 }
 
@@ -99,8 +163,14 @@ func TestPollReturnsBanterNeededJSONPayload(t *testing.T) {
 	if !strings.Contains(stdout, "\"event\":\"banter_needed\"") {
 		t.Fatalf("stdout = %q, want banter_needed json event", stdout)
 	}
-	if !strings.Contains(stdout, "\"artist\":\"SZA\"") || !strings.Contains(stdout, "\"title\":\"Saturn\"") {
-		t.Fatalf("stdout = %q, want next_song details", stdout)
+	if strings.Contains(stdout, "\"path\":") {
+		t.Fatalf("stdout should not expose internal path: %q", stdout)
+	}
+	if !strings.Contains(stdout, "\"upcoming_song\":\"SZA - Saturn\"") {
+		t.Fatalf("stdout = %q, want upcoming_song display", stdout)
+	}
+	if !strings.Contains(stdout, "\"action\":\"speak\"") {
+		t.Fatalf("stdout = %q, want speak action", stdout)
 	}
 }
 
@@ -134,6 +204,9 @@ func TestPollReturnsEngineStoppedWhenRadioNotRunning(t *testing.T) {
 	}
 	if event["event"] != "engine_stopped" {
 		t.Fatalf("event = %v, want engine_stopped", event["event"])
+	}
+	if event["action"] != "restart" {
+		t.Fatalf("action = %v, want restart", event["action"])
 	}
 }
 

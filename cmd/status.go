@@ -16,8 +16,6 @@ import (
 	"github.com/vossenwout/claw-radio/internal/mpv"
 )
 
-const statusDefaultQueueDepth = 5
-
 type statusMPVClient interface {
 	Close() error
 	Get(prop string) (json.RawMessage, error)
@@ -47,8 +45,7 @@ type statusPlayback struct {
 }
 
 type statusQueue struct {
-	Count int `json:"count"`
-	Depth int `json:"depth"`
+	Upcoming int `json:"upcoming"`
 }
 
 type statusStationFile struct {
@@ -99,14 +96,9 @@ func runStatus(cmd *cobra.Command, asJSON bool) error {
 }
 
 func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
-	depth := statusDefaultQueueDepth
-	if cfg != nil && cfg.Station.QueueDepth > 0 {
-		depth = cfg.Station.QueueDepth
-	}
-
 	snapshot := statusSnapshot{
 		Engine:     "stopped",
-		Queue:      statusQueue{Count: 0, Depth: depth},
+		Queue:      statusQueue{Upcoming: 0},
 		Controller: "stopped",
 		TTS:        detectTTSStatus(cfg),
 	}
@@ -137,8 +129,17 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 	defer client.Close()
 
 	snapshot.Playback = readPlaybackStatus(client)
-	if count, err := client.PlaylistCount(); err == nil {
-		snapshot.Queue.Count = count
+	if upcoming, ok := readUpcomingFromPlaylist(client); ok {
+		snapshot.Queue.Upcoming = upcoming
+	} else if count, err := client.PlaylistCount(); err == nil {
+		upcoming := count
+		if snapshot.Playback != nil && (snapshot.Playback.State == "playing" || snapshot.Playback.State == "paused" || snapshot.Playback.State == "buffering") && upcoming > 0 {
+			upcoming--
+		}
+		snapshot.Queue.Upcoming = upcoming
+	}
+	if snapshot.Playback != nil && snapshot.Playback.State == "idle" && (snapshot.Queue.Upcoming > 0 || (snapshot.Station != nil && snapshot.Station.Seeds > 0)) {
+		snapshot.Playback.State = "buffering"
 	}
 
 	return snapshot
@@ -259,6 +260,38 @@ func readFloatProperty(client statusMPVClient, prop string) (float64, bool) {
 	return 0, false
 }
 
+func readUpcomingFromPlaylist(client statusMPVClient) (int, bool) {
+	raw, err := client.Get("playlist")
+	if err != nil {
+		return 0, false
+	}
+	var items []struct {
+		Current bool `json:"current"`
+		Playing bool `json:"playing"`
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0, false
+	}
+	if len(items) == 0 {
+		return 0, true
+	}
+	currentIndex := -1
+	for i, item := range items {
+		if item.Current || item.Playing {
+			currentIndex = i
+			break
+		}
+	}
+	if currentIndex < 0 {
+		return 0, true
+	}
+	upcoming := len(items) - currentIndex - 1
+	if upcoming < 0 {
+		upcoming = 0
+	}
+	return upcoming, true
+}
+
 func detectTTSStatus(cfg *config.Config) string {
 	if cfg == nil {
 		return "unavailable"
@@ -308,7 +341,7 @@ func renderHumanStatus(w io.Writer, snapshot statusSnapshot) {
 		fmt.Fprintln(w, "playback: unavailable")
 	}
 
-	fmt.Fprintf(w, "queue: count=%d depth=%d\n", snapshot.Queue.Count, snapshot.Queue.Depth)
+	fmt.Fprintf(w, "upcoming songs: %d\n", snapshot.Queue.Upcoming)
 	fmt.Fprintf(w, "controller: %s\n", snapshot.Controller)
 	fmt.Fprintf(w, "tts: %s\n", snapshot.TTS)
 }

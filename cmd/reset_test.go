@@ -9,7 +9,7 @@ import (
 	"github.com/vossenwout/claw-radio/internal/config"
 )
 
-func TestResetClearsStationStateAndCache(t *testing.T) {
+func TestStopClearsStationStateAndCache(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")
 	cacheDir := filepath.Join(tmp, "cache")
@@ -32,12 +32,12 @@ func TestResetClearsStationStateAndCache(t *testing.T) {
 	restore := withEngineTestHooks(cfg, tmp)
 	defer restore()
 
-	err, stdout, _ := executeCommandWithOutputForTest("reset")
+	err, stdout, _ := executeCommandWithOutputForTest("stop")
 	if err != nil {
-		t.Fatalf("reset command failed: %v", err)
+		t.Fatalf("stop command failed: %v", err)
 	}
-	if !strings.Contains(stdout, "radio reset") {
-		t.Fatalf("stdout = %q, want reset message", stdout)
+	if !strings.Contains(stdout, "stopped and reset") {
+		t.Fatalf("stdout = %q, want stop+reset message", stdout)
 	}
 
 	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {

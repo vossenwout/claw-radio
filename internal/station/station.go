@@ -146,6 +146,30 @@ func (s *Station) AppendSeeds(seeds []string) {
 	}
 }
 
+func (s *Station) RemoveSeed(seed string) bool {
+	if s == nil {
+		return false
+	}
+	key := normalize(seed)
+	if key == "" {
+		return false
+	}
+	for i, existing := range s.Seeds {
+		if normalize(existing) != key {
+			continue
+		}
+		s.Seeds = append(s.Seeds[:i], s.Seeds[i+1:]...)
+		if s.seedIndex > i {
+			s.seedIndex--
+		}
+		if s.seedIndex >= len(s.Seeds) {
+			s.seedIndex = 0
+		}
+		return true
+	}
+	return false
+}
+
 func (s *Station) PickSeed() string {
 	if s == nil || len(s.Seeds) == 0 {
 		return ""

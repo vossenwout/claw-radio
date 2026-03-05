@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -25,26 +26,38 @@ const (
 	ttsPIDFileName      = "claw-radio-tts.pid"
 	mpvMissingMessage   = "mpv not found.\nInstall on macOS:  brew install mpv\nInstall on Linux:  apt install mpv   (Debian/Ubuntu)\n                   dnf install mpv   (Fedora)"
 	ytdlpMissingMessage = "yt-dlp not found.\nInstall on macOS:  brew install yt-dlp\nInstall on Linux:  pip install yt-dlp"
+	startReadyTimeout   = 60 * time.Second
+	startReadyPollEvery = 500 * time.Millisecond
 )
+
+type startReadinessClient interface {
+	Close() error
+	PlaylistCount() (int, error)
+	Get(prop string) (json.RawMessage, error)
+}
 
 var (
 	pidBaseDir = "/tmp"
 
-	loadConfigFn      = config.Load
-	startProcessFn    = defaultStartProcess
-	waitForSocketFn   = waitForSocket
-	executablePathFn  = os.Executable
-	sendMPVQuitFn     = sendMPVQuit
-	filepathGlobFn    = filepath.Glob
-	removeFileFn      = os.Remove
-	removeAllFn       = os.RemoveAll
-	readFileFn        = os.ReadFile
-	writeFileFn       = os.WriteFile
-	mkdirAllFn        = os.MkdirAll
-	openFileFn        = os.OpenFile
-	findProcessFn     = os.FindProcess
-	statFileFn        = os.Stat
-	execCommandHelper = exec.Command
+	loadConfigFn               = config.Load
+	startProcessFn             = defaultStartProcess
+	waitForSocketFn            = waitForSocket
+	executablePathFn           = os.Executable
+	sendMPVQuitFn              = sendMPVQuit
+	filepathGlobFn             = filepath.Glob
+	removeFileFn               = os.Remove
+	removeAllFn                = os.RemoveAll
+	readFileFn                 = os.ReadFile
+	writeFileFn                = os.WriteFile
+	mkdirAllFn                 = os.MkdirAll
+	openFileFn                 = os.OpenFile
+	findProcessFn              = os.FindProcess
+	statFileFn                 = os.Stat
+	execCommandHelper          = exec.Command
+	waitForStartReadyFn        = waitForStartReady
+	dialStartReadinessClientFn = func(socketPath string) (startReadinessClient, error) {
+		return mpv.Dial(socketPath)
+	}
 )
 
 var startCmd = &cobra.Command{
@@ -151,8 +164,92 @@ func runStart(cmd *cobra.Command) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
 	}
 
+	if err := waitForStartReadyFn(cmd, cfg); err != nil {
+		return exitCode(err, 1)
+	}
+
 	fmt.Fprintln(cmd.OutOrStdout(), "radio started")
 	return nil
+}
+
+func waitForStartReady(cmd *cobra.Command, cfg *config.Config) error {
+	targetCount, shouldWait, err := startupReadyTarget(cfg)
+	if err != nil {
+		return err
+	}
+	if !shouldWait {
+		return nil
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "preparing your first song (downloading if needed)...")
+
+	deadline := time.Now().Add(startReadyTimeout)
+	for time.Now().Before(deadline) {
+		client, err := dialStartReadinessClientFn(cfg.MPV.Socket)
+		if err == nil {
+			count, countErr := client.PlaylistCount()
+			idleActive, idleKnown := readStartBoolProperty(client, "idle-active")
+			_ = client.Close()
+			if countErr == nil && count >= targetCount {
+				if !idleKnown || !idleActive {
+					return nil
+				}
+			}
+		}
+		time.Sleep(startReadyPollEvery)
+	}
+
+	return fmt.Errorf("radio is running but still buffering the first song; check with: claw-radio status --json")
+}
+
+func startupReadyTarget(cfg *config.Config) (int, bool, error) {
+	if cfg == nil {
+		return 0, false, nil
+	}
+
+	hasPendingIntro := false
+	if strings.TrimSpace(cfg.Station.StateDir) != "" {
+		pendingIntro, err := station.NewAgentEventStore(cfg.Station.StateDir).LoadPendingIntro()
+		if err != nil {
+			return 0, false, fmt.Errorf("load pending intro: %w", err)
+		}
+		hasPendingIntro = pendingIntro != nil && strings.TrimSpace(pendingIntro.AudioPath) != ""
+	}
+
+	st, err := station.Load(cfg.Station.StateDir)
+	if err != nil {
+		return 0, false, fmt.Errorf("load station state: %w", err)
+	}
+	hasSongs := len(st.Seeds) > 0
+
+	if !hasPendingIntro && !hasSongs {
+		return 0, false, nil
+	}
+
+	target := 0
+	if hasPendingIntro {
+		target++
+	}
+	if hasSongs {
+		target++
+	}
+	if target == 0 {
+		target = 1
+	}
+
+	return target, true, nil
+}
+
+func readStartBoolProperty(client startReadinessClient, prop string) (bool, bool) {
+	raw, err := client.Get(prop)
+	if err != nil {
+		return false, false
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false, false
+	}
+	return value, true
 }
 
 func maybeStartTTSDaemon(cfg *config.Config, logFile *os.File) error {

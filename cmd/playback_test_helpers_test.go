@@ -7,86 +7,11 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/vossenwout/claw-radio/internal/config"
-	"github.com/vossenwout/claw-radio/internal/mpv"
 )
-
-func TestPlaybackCommandsExitFiveWhenMPVNotRunning(t *testing.T) {
-	cfg := &config.Config{
-		MPV: config.MPVConfig{
-			Socket: filepath.Join(t.TempDir(), "missing.sock"),
-		},
-		Station: config.StationConfig{
-			CacheDir: t.TempDir(),
-		},
-	}
-
-	restore := withPlaybackTestHooks(cfg)
-	defer restore()
-
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{name: "next", args: []string{"next"}},
-	}
-
-	for _, tt := range tests {
-		err := executeCommandForTest(t, tt.args...)
-		assertExitCode(t, err, 5)
-		if !strings.Contains(err.Error(), "claw-radio start") {
-			t.Fatalf("%s error must suggest claw-radio start, got %q", tt.name, err)
-		}
-	}
-}
-
-func TestNextSendsPlaylistNext(t *testing.T) {
-	socketPath := makePlaybackSocketPath(t, "next")
-	mock := startPlaybackMPVServer(t, socketPath)
-
-	cfg := &config.Config{
-		MPV: config.MPVConfig{Socket: socketPath},
-	}
-	restore := withPlaybackTestHooks(cfg)
-	defer restore()
-
-	if err := executeCommandForTest(t, "next"); err != nil {
-		t.Fatalf("next failed: %v", err)
-	}
-
-	mock.wait(t)
-	want := [][]interface{}{
-		{"playlist-next"},
-	}
-	if !reflect.DeepEqual(mock.commands(), want) {
-		t.Fatalf("unexpected mpv commands:\n got: %#v\nwant: %#v", mock.commands(), want)
-	}
-}
-
-func withPlaybackTestHooks(cfg *config.Config) func() {
-	origLoad := loadConfigFn
-	origDial := dialPlaybackClientFn
-
-	loadConfigFn = func() (*config.Config, error) {
-		copy := *cfg
-		return &copy, nil
-	}
-	dialPlaybackClientFn = func(socketPath string) (playbackClient, error) {
-		return mpv.Dial(socketPath)
-	}
-
-	return func() {
-		loadConfigFn = origLoad
-		dialPlaybackClientFn = origDial
-	}
-}
 
 type playbackMPVServer struct {
 	listener *net.UnixListener

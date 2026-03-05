@@ -3,7 +3,7 @@ name: claw-radio
 description: >
   GTA-style AI radio station. You operate the radio as a character whose voice
   matches the station vibe. The CLI is your control board; you are the host.
-  Use this skill to: start the radio, build a playlist pool by searching the
+  Use this skill to: start the radio, build an upcoming playlist queue by searching the
   web, inject spoken banter between tracks, and react to playback events. Works
   on macOS and Linux. Requires: mpv, yt-dlp, SearxNG.
 ---
@@ -23,9 +23,9 @@ Match your voice and energy to the station vibe:
 
 Banter is short: 1-2 sentences, under 25 words, specific to the moment.
 
-## Building a playlist pool
+## Building a playlist queue
 
-Before building your playlist pool, call `claw-radio search` multiple times. Prefer deterministic
+Before building your playlist queue, call `claw-radio search` multiple times. Prefer deterministic
 mode-based queries for higher quality output.
 
 ### Search modes (what they actually do)
@@ -84,15 +84,13 @@ claw-radio playlist add '[
 The agent should actually run playback commands, not just watch events.
 
 - `claw-radio start`: starts the radio if it is not already running.
-- `claw-radio stop`: ends the current radio session.
-- `claw-radio reset`: stops the radio and clears playlist pool, station state, and cache.
-- `claw-radio playlist add '[...]'`: adds songs for normal queue generation/playback.
-- `claw-radio playlist view --json`: inspect the current playlist pool.
-- `claw-radio playlist reset`: clear playlist pool songs.
+- `claw-radio stop`: ends the current radio session and resets playlist queue, station state, and cache.
+- `claw-radio playlist add '[...]'`: adds songs to the upcoming queue.
+- `claw-radio playlist view --json`: inspect songs still upcoming.
+- `claw-radio playlist reset`: clear all upcoming songs.
 - `claw-radio poll --timeout 30s`: wait for one host cue, print one JSON cue,
   and exit.
-- `claw-radio status --json`: verify playback state and queue health.
-- `claw-radio next`: skip immediately if the current song is wrong for vibe.
+- `claw-radio status --json`: verify playback state and upcoming song count.
 - `claw-radio say "<banter>"`: put banter at the front of what plays next.
 
 ### Era / genre vibes
@@ -145,10 +143,7 @@ claw-radio start
 # 5. Verify playback actually running
 claw-radio status --json
 
-# 6. Optional immediate correction
-claw-radio next
-
-# 7. Agent loop: poll one event at a time
+# 6. Agent loop: poll one event at a time
 claw-radio poll --timeout 30s
 ```
 
@@ -159,16 +154,19 @@ event and exits.
 
 **`banter_needed`** - generate and inject banter before upcoming track:
 
-- Read `prompt` and `next_song` from event payload.
+- Read `upcoming_song` from event payload.
 - Generate 1-2 short sentences in persona.
 - `claw-radio say "<quip>"`
 
 **`queue_low`** - find and append more songs:
 
+- Read `suggested_add_count` and top up around that many songs.
 - `claw-radio search "<another query>" --mode chart-year,genre-top`
 - `claw-radio playlist add '[new songs]'`
 
 **`engine_stopped`** - restart with `claw-radio start`.
+
+**`buffering`** - songs are being prepared; wait and poll again.
 
 **`timeout`** - no new cue yet; poll again.
 

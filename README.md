@@ -1,7 +1,7 @@
 # claw-radio
 
 `claw-radio` is a CLI for running an AI-operated, GTA-style radio station:
-start continuous playback, build a playlist pool from web search, inject spoken
+start continuous playback, build an upcoming playlist queue from web search, inject spoken
 banter, and react to playback events.
 
 ## Installation
@@ -59,16 +59,14 @@ claw-radio poll
 | `tts install` | `none` | Install Chatterbox TTS files into the configured data directory. |
 | `tts voice add` | `--name <voice-name>` | Download a sample URL and save it as a reusable voice prompt WAV. |
 | `start` | `none` | Start the radio show. If already running, nothing changes. |
-| `stop` | `none` | End the current radio session. If already stopped, it returns a no-op message. |
-| `reset` | `none` | Start fresh by stopping the radio and clearing playlist pool, station state, and cache. |
-| `next` | `none` | Skip to the next track. |
-| `playlist add` | `none` | Add songs to the playlist pool from a JSON string array of `"Artist - Title"` items. |
-| `playlist view` | `--json` | Show songs currently in the playlist pool. |
-| `playlist reset` | `none` | Clear all songs from the playlist pool. |
-| `search` | `--mode raw\|artist-top\|artist-year\|chart-year\|genre-top, --engines <csv>, --max-pages <n>, --expand-suggestions, --debug` | Find song ideas you can add to your playlist pool. |
+| `stop` | `none` | End the current radio session and reset playlist, station state, and cached audio. |
+| `playlist add` | `none` | Add songs to the upcoming playlist queue from a JSON string array of `"Artist - Title"` items. |
+| `playlist view` | `--json` | Show songs still upcoming in the playlist queue. Played songs are removed automatically. |
+| `playlist reset` | `none` | Clear all upcoming songs from the playlist queue. |
+| `search` | `--mode raw\|artist-top\|artist-year\|chart-year\|genre-top, --engines <csv>, --max-pages <n>, --expand-suggestions, --debug` | Find song ideas you can add to the playlist queue. |
 | `say` | `none` | Speak a host line next. If radio is not running, it becomes your intro on next start. |
-| `poll` | `--timeout <duration>` | Wait for the next host cue and return one JSON result. |
-| `status` | `--json` | Check whether the radio is running, what is playing, and queue health. |
+| `poll` | `--timeout <duration>` | Wait for the next host cue and return one JSON result (`banter_needed`, `queue_low`, `buffering`, `engine_stopped`, or `timeout`). |
+| `status` | `--json` | Check whether the radio is running, what is playing, and how many songs are still upcoming. |
 | `version` | `none` | Print the installed `claw-radio` version. |
 
 ## Search Tips
@@ -87,6 +85,7 @@ claw-radio poll
 
 - `playlist add` expects one JSON array argument: `['Artist - Title', ...]`.
 - Keep entries as plain strings in `Artist - Title` format.
+- `playlist` is consumed as songs play, so `playlist view` shows what is still upcoming.
 
 ```bash
 claw-radio playlist add '[

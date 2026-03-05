@@ -44,6 +44,20 @@ func TestAppendSeedsDeduplicates(t *testing.T) {
 	}
 }
 
+func TestRemoveSeedRemovesMatchingEntry(t *testing.T) {
+	t.Parallel()
+
+	st := &Station{}
+	st.AppendSeeds([]string{"A - B", "C - D"})
+
+	if removed := st.RemoveSeed("A - B"); !removed {
+		t.Fatal("RemoveSeed returned false, want true")
+	}
+	if !reflect.DeepEqual(st.Seeds, []string{"C - D"}) {
+		t.Fatalf("Seeds mismatch after RemoveSeed: got %v", st.Seeds)
+	}
+}
+
 func TestMarkPlayedDedupeByVideoID(t *testing.T) {
 	t.Parallel()
 

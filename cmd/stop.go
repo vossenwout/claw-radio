@@ -12,7 +12,7 @@ import (
 var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "End the current radio session",
-	Long:  "Stop the radio and end playback for now. Your saved playlist pool stays available for the next start.",
+	Long:  "Stop the radio and reset it for a fresh next start by clearing playlist, state, and cached audio.",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runStop(cmd)
@@ -24,17 +24,44 @@ func runStop(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	changed, err := stopRuntime(cfg)
+	runtimeChanged, err := stopRuntime(cfg)
 	if err != nil {
 		return err
 	}
-	if !changed {
+
+	stateChanged, err := clearStationData(cfg)
+	if err != nil {
+		return err
+	}
+
+	if !runtimeChanged && !stateChanged {
 		fmt.Fprintln(cmd.OutOrStdout(), "radio is already stopped")
 		return nil
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "radio stopped")
+	fmt.Fprintln(cmd.OutOrStdout(), "radio stopped and reset")
 	return nil
+}
+
+func clearStationData(cfg *config.Config) (bool, error) {
+	if cfg == nil {
+		return false, nil
+	}
+	changed := false
+	for _, path := range []string{cfg.Station.StateDir, cfg.Station.CacheDir} {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if !fileExists(path) {
+			continue
+		}
+		if err := removeAllFn(path); err != nil {
+			return changed, fmt.Errorf("clear path %s: %w", path, err)
+		}
+		changed = true
+	}
+	return changed, nil
 }
 
 func stopRuntime(cfg *config.Config) (bool, error) {

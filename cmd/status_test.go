@@ -97,6 +97,133 @@ func TestStatusJSONReportsRunningEngineAndPlaybackFields(t *testing.T) {
 	}
 }
 
+func TestStatusJSONShowsBufferingWhenQueueExistsButNoActiveTitle(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{StateDir: filepath.Join(tmp, "state"), QueueDepth: 5},
+		TTS:     config.TTSConfig{Socket: filepath.Join(tmp, "missing-tts.sock")},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 111)
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, ""),
+			"time-pos":    mustRawJSON(t, 0),
+			"duration":    mustRawJSON(t, 0),
+			"volume":      mustRawJSON(t, 100),
+		},
+		playlistCount: 2,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 111 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil {
+		t.Fatalf("playback missing from output: %s", stdout)
+	}
+	if out.Playback.State != "buffering" {
+		t.Fatalf("playback.state = %q, want %q", out.Playback.State, "buffering")
+	}
+}
+
+func TestStatusJSONUsesPlaylistCurrentIndexForUpcomingCount(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{StateDir: filepath.Join(tmp, "state"), QueueDepth: 5},
+		TTS:     config.TTSConfig{Socket: filepath.Join(tmp, "missing-tts.sock")},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 112)
+
+	playlist := mustRawJSON(t, []map[string]interface{}{
+		{"filename": "intro.aiff"},
+		{"filename": "song.opus", "current": true, "playing": true},
+	})
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, "Fergie - glamours"),
+			"time-pos":    mustRawJSON(t, 1.0),
+			"duration":    mustRawJSON(t, 250.0),
+			"volume":      mustRawJSON(t, 100),
+			"playlist":    playlist,
+		},
+		playlistCount: 2,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 112 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Queue.Upcoming != 0 {
+		t.Fatalf("queue.upcoming = %d, want 0", out.Queue.Upcoming)
+	}
+}
+
+func TestStatusJSONShowsBufferingWhenIdleWithPendingPlaylistSeeds(t *testing.T) {
+	tmp := t.TempDir()
+	stateDir := filepath.Join(tmp, "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	stationJSON := `{"label":"","seeds":["Party in the USA - Miley Cyrus"]}`
+	if err := os.WriteFile(filepath.Join(stateDir, "station.json"), []byte(stationJSON), 0o644); err != nil {
+		t.Fatalf("write station.json: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{StateDir: stateDir, QueueDepth: 5},
+		TTS:     config.TTSConfig{Socket: filepath.Join(tmp, "missing-tts.sock")},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 113)
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, ""),
+			"time-pos":    mustRawJSON(t, 0),
+			"duration":    mustRawJSON(t, 0),
+			"volume":      mustRawJSON(t, 100),
+			"playlist":    mustRawJSON(t, []map[string]interface{}{}),
+		},
+		playlistCount: 0,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 113 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil {
+		t.Fatalf("playback missing from output: %s", stdout)
+	}
+	if out.Playback.State != "buffering" {
+		t.Fatalf("playback.state = %q, want buffering", out.Playback.State)
+	}
+}
+
 func TestStatusJSONUsesMetadataTitleWhenMediaTitleLooksLikeFilename(t *testing.T) {
 	tmp := t.TempDir()
 	cfg := &config.Config{
@@ -504,8 +631,7 @@ type statusPlaybackForTest struct {
 }
 
 type statusQueueForTest struct {
-	Count int `json:"count"`
-	Depth int `json:"depth"`
+	Upcoming int `json:"upcoming"`
 }
 
 type fakeStatusMPVClient struct {

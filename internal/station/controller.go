@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultQueueDepth = 5
-	safetyTick        = 30 * time.Second
+	safetyTick        = 2 * time.Second
 )
 
 type mpvClient interface {
@@ -72,8 +72,22 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 	if err := svc.events.Ensure(); err != nil {
 		svc.logf("ensure agent events failed: %v", err)
 	}
+	var startupPrefetched *prefetchedSong
+	if svc.pendingIntroExists() {
+		prefetched, err := svc.prefetchOneSeedForStartup()
+		if err != nil {
+			svc.logf("prefetch first song before intro failed: %v", err)
+		} else {
+			startupPrefetched = prefetched
+		}
+	}
 	if err := svc.enqueuePendingIntro(); err != nil {
 		svc.logf("enqueue pending intro failed: %v", err)
+	}
+	if startupPrefetched != nil {
+		if err := svc.enqueuePrefetchedSong(startupPrefetched); err != nil {
+			svc.logf("enqueue prefetched startup song failed: %v", err)
+		}
 	}
 
 	if err := svc.fillQueue(); err != nil {
@@ -127,8 +141,69 @@ type service struct {
 	events *AgentEventStore
 }
 
+type prefetchedSong struct {
+	AudioPath string
+	SongKey   string
+	VideoID   string
+}
+
+func (s *service) pendingIntroExists() bool {
+	if s.events == nil {
+		return false
+	}
+	pending, err := s.events.LoadPendingIntro()
+	if err != nil || pending == nil {
+		return false
+	}
+	if strings.TrimSpace(pending.AudioPath) == "" {
+		return false
+	}
+	if _, err := os.Stat(pending.AudioPath); err != nil {
+		return false
+	}
+	return true
+}
+
+func (s *service) prefetchOneSeedForStartup() (*prefetchedSong, error) {
+	s.refreshQueueFromDisk()
+	if s == nil || s.st == nil || s.prov == nil || len(s.st.Seeds) == 0 {
+		return nil, nil
+	}
+	for _, seed := range s.st.Seeds {
+		if seed == "" {
+			continue
+		}
+		audioPath, err := s.prov.Resolve(seed, s.cfg.Station.CacheDir)
+		if err != nil {
+			s.logf("prefetch seed %q failed: %v", seed, err)
+			continue
+		}
+		return &prefetchedSong{AudioPath: audioPath, SongKey: normalize(seed), VideoID: videoIDFromPath(audioPath)}, nil
+	}
+
+	return nil, nil
+}
+
+func (s *service) enqueuePrefetchedSong(prefetched *prefetchedSong) error {
+	if prefetched == nil || strings.TrimSpace(prefetched.AudioPath) == "" {
+		return nil
+	}
+
+	mode := "append"
+	if count, err := s.client.PlaylistCount(); err == nil && count == 0 {
+		mode = "append-play"
+	}
+	if err := s.client.LoadFile(prefetched.AudioPath, mode); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *service) handleTrackStarted() error {
 	currentPath, _ := readStringPropertyCompat(s.client, "path")
+	if currentPath != "" {
+		s.consumePlayedSeedForPath(currentPath)
+	}
 	if currentPath != "" {
 		if pending, err := s.events.LoadPendingBanter(); err == nil && pending != nil {
 			if sameMediaPath(pending.NextSong.Path, currentPath) {
@@ -136,12 +211,21 @@ func (s *service) handleTrackStarted() error {
 			}
 		}
 	}
+	if isBanterPath(s.cfg, currentPath) {
+		return nil
+	}
+	return s.emitBanterNeededForUpcoming(currentPath)
+}
 
+func (s *service) emitBanterNeededForUpcoming(currentPath string) error {
 	nextSong, ok, err := s.peekNextSong()
 	if err != nil {
 		return err
 	}
 	if !ok {
+		return nil
+	}
+	if sameMediaPath(currentPath, nextSong.Path) {
 		return nil
 	}
 
@@ -363,7 +447,91 @@ func readStringPropertyCompat(client mpvClient, prop string) (string, bool) {
 	return value, true
 }
 
+func readBoolPropertyCompat(client mpvClient, prop string) (bool, bool) {
+	raw, err := client.Get(prop)
+	if err != nil {
+		return false, false
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false, false
+	}
+	return value, true
+}
+
+func (s *service) consumePlayedSeedForPath(path string) {
+	seed := seedFromPath(path)
+	if seed == "" {
+		return
+	}
+	latest, err := Load(s.cfg.Station.StateDir)
+	if err != nil {
+		s.logf("load station for consume failed: %v", err)
+		return
+	}
+	if latest.RemoveSeed(seed) {
+		if err := latest.Save(); err != nil {
+			s.logf("save station after consume failed: %v", err)
+			return
+		}
+		s.st.Seeds = append([]string(nil), latest.Seeds...)
+		s.st.Label = latest.Label
+	}
+}
+
+func (s *service) refreshQueueFromDisk() {
+	latest, err := Load(s.cfg.Station.StateDir)
+	if err != nil {
+		s.logf("reload station state failed: %v", err)
+		return
+	}
+	s.st.Seeds = append([]string(nil), latest.Seeds...)
+	s.st.Label = latest.Label
+}
+
+func seedFromPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	data, err := os.ReadFile(trimmed + ".meta.json")
+	if err != nil {
+		return ""
+	}
+	var meta struct {
+		Seed    string `json:"seed"`
+		Display string `json:"display"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return ""
+	}
+	if strings.TrimSpace(meta.Seed) != "" {
+		return strings.TrimSpace(meta.Seed)
+	}
+	return strings.TrimSpace(meta.Display)
+}
+
+func isBanterPath(cfg *config.Config, mediaPath string) bool {
+	if cfg == nil {
+		return false
+	}
+	base := strings.TrimSpace(cfg.TTS.DataDir)
+	path := strings.TrimSpace(mediaPath)
+	if base == "" || path == "" {
+		return false
+	}
+	banterDir := filepath.Join(base, "banter")
+	absBanter, errA := filepath.Abs(banterDir)
+	absPath, errB := filepath.Abs(path)
+	if errA != nil || errB != nil {
+		return strings.HasPrefix(path, banterDir+string(os.PathSeparator)) || path == banterDir
+	}
+	return strings.HasPrefix(absPath, absBanter+string(os.PathSeparator)) || absPath == absBanter
+}
+
 func (s *service) fillQueue() error {
+	s.refreshQueueFromDisk()
+
 	count, err := s.client.PlaylistCount()
 	if err != nil {
 		return fmt.Errorf("read playlist count: %w", err)
@@ -374,55 +542,67 @@ func (s *service) fillQueue() error {
 		target = defaultQueueDepth
 	}
 
-	seeds := len(s.st.Seeds)
-	if seeds == 0 {
+	if len(s.st.Seeds) == 0 {
 		return s.gcCache()
 	}
-
-	attempts := 0
-	maxAttempts := target * seeds * 2
-	if maxAttempts < seeds {
-		maxAttempts = seeds
-	}
-
-	for count < target && attempts < maxAttempts {
-		seed := s.st.PickSeed()
-		if seed == "" {
+	queued := s.queuedSeedKeys()
+	added := false
+	for _, seed := range s.st.Seeds {
+		if count >= target {
 			break
 		}
-		attempts++
-
 		songKey := normalize(seed)
-		if s.st.AlreadyPlayed("", songKey) {
+		if songKey == "" {
 			continue
 		}
-
+		if _, exists := queued[songKey]; exists {
+			continue
+		}
 		audioPath, err := s.prov.Resolve(seed, s.cfg.Station.CacheDir)
 		if err != nil {
 			s.logf("resolve seed %q failed: %v", seed, err)
 			continue
 		}
 
-		videoID := videoIDFromPath(audioPath)
-		if s.st.AlreadyPlayed(videoID, songKey) {
-			continue
-		}
-
 		mode := "append"
-		if count == 0 {
+		idleActive, ok := readBoolPropertyCompat(s.client, "idle-active")
+		if count == 0 || (ok && idleActive) {
 			mode = "append-play"
 		}
 		if err := s.client.LoadFile(audioPath, mode); err != nil {
 			s.logf("append path %q failed: %v", audioPath, err)
 			continue
 		}
-
-		s.st.MarkPlayed(videoID, songKey)
+		queued[songKey] = struct{}{}
 		count++
+		added = true
 	}
-
-	s.saveState()
+	if added {
+		currentPath, _ := readStringPropertyCompat(s.client, "path")
+		if currentPath != "" && !isBanterPath(s.cfg, currentPath) {
+			if err := s.emitBanterNeededForUpcoming(currentPath); err != nil {
+				s.logf("emit banter cue after queue update failed: %v", err)
+			}
+		}
+	}
 	return s.gcCache()
+}
+
+func (s *service) queuedSeedKeys() map[string]struct{} {
+	keys := map[string]struct{}{}
+	paths, err := s.client.PlaylistPaths()
+	if err != nil {
+		return keys
+	}
+	for _, path := range paths {
+		seed := seedFromPath(path)
+		key := normalize(seed)
+		if key == "" {
+			continue
+		}
+		keys[key] = struct{}{}
+	}
+	return keys
 }
 
 func (s *service) gcCache() error {
