@@ -27,11 +27,11 @@ var pollCmd = &cobra.Command{
 
 type pollCue struct {
 	Event             string `json:"event"`
-	Action            string `json:"action,omitempty"`
-	Instruction       string `json:"instruction,omitempty"`
+	Prompt            string `json:"prompt,omitempty"`
+	Command           string `json:"command,omitempty"`
+	CommandTemplate   string `json:"command_template,omitempty"`
 	UpcomingSong      string `json:"upcoming_song,omitempty"`
 	SuggestedAddCount int    `json:"suggested_add_count,omitempty"`
-	TS                int64  `json:"ts"`
 }
 
 func runPoll(cmd *cobra.Command, timeout time.Duration) error {
@@ -61,10 +61,8 @@ func runPoll(cmd *cobra.Command, timeout time.Duration) error {
 		snapshot := buildStatusSnapshot(cfg)
 		if snapshot.Engine == "running" && snapshot.Controller == "running" && snapshot.Playback != nil && snapshot.Playback.State == "buffering" {
 			cue = pollCue{
-				Event:       "buffering",
-				Action:      "wait",
-				Instruction: "Radio is buffering upcoming songs. Poll again shortly.",
-				TS:          event.TS,
+				Event:  "buffering",
+				Prompt: "Radio is buffering upcoming songs. Poll again shortly.",
 			}
 		}
 	}
@@ -78,12 +76,12 @@ func runPoll(cmd *cobra.Command, timeout time.Duration) error {
 }
 
 func toPollCue(event station.AgentEvent) pollCue {
-	cue := pollCue{Event: event.Event, TS: event.TS}
+	cue := pollCue{Event: event.Event}
 
 	switch event.Event {
 	case "banter_needed":
-		cue.Action = "speak"
-		cue.Instruction = "Say 1-2 short host sentences before the upcoming song."
+		cue.Prompt = defaultPollPrompt(event.Prompt, "Say 1-2 short host sentences before the upcoming song.")
+		cue.CommandTemplate = `claw-radio say "<banter>"`
 		if event.NextSong != nil {
 			artist := strings.TrimSpace(event.NextSong.Artist)
 			title := strings.TrimSpace(event.NextSong.Title)
@@ -96,22 +94,29 @@ func toPollCue(event station.AgentEvent) pollCue {
 			}
 		}
 	case "queue_low":
-		cue.Action = "add_songs"
-		cue.Instruction = "Add more songs with `claw-radio playlist add '[...]'`."
+		cue.Prompt = defaultPollPrompt(event.Prompt, "Add more songs to keep the queue healthy.")
+		cue.CommandTemplate = `claw-radio playlist add '["Artist - Title", ...]'`
 		suggested := event.Depth - event.Count
 		if suggested <= 0 {
 			suggested = 3
 		}
 		cue.SuggestedAddCount = suggested
 	case "engine_stopped":
-		cue.Action = "restart"
-		cue.Instruction = "Run `claw-radio start` to restart playback."
+		cue.Prompt = defaultPollPrompt(event.Prompt, "Restart playback.")
+		cue.Command = "claw-radio start"
 	case "timeout":
-		cue.Action = "wait"
-		cue.Instruction = "No new cue yet. Poll again."
+		cue.Prompt = defaultPollPrompt(event.Prompt, "No new cue yet. Poll again.")
 	}
 
 	return cue
+}
+
+func defaultPollPrompt(raw, fallback string) string {
+	prompt := strings.TrimSpace(raw)
+	if prompt != "" {
+		return prompt
+	}
+	return fallback
 }
 
 func nextRelevantPollEvent(cfg *config.Config, store *station.AgentEventStore, timeout time.Duration) (station.AgentEvent, error) {

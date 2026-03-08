@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,8 +37,8 @@ func TestPollReturnsTimeoutEvent(t *testing.T) {
 	if event["event"] != "timeout" {
 		t.Fatalf("event = %v, want timeout", event["event"])
 	}
-	if event["action"] != "wait" {
-		t.Fatalf("action = %v, want wait", event["action"])
+	if event["prompt"] != "No new cue yet. Poll again." {
+		t.Fatalf("prompt = %v, want wait prompt", event["prompt"])
 	}
 }
 
@@ -92,8 +91,8 @@ func TestPollReturnsBufferingCueWhenRadioBuffering(t *testing.T) {
 	if event["event"] != "buffering" {
 		t.Fatalf("event = %v, want buffering", event["event"])
 	}
-	if event["action"] != "wait" {
-		t.Fatalf("action = %v, want wait", event["action"])
+	if event["prompt"] != "Radio is buffering upcoming songs. Poll again shortly." {
+		t.Fatalf("prompt = %v, want buffering prompt", event["prompt"])
 	}
 }
 
@@ -127,8 +126,8 @@ func TestPollReturnsQueuedEvent(t *testing.T) {
 	if event["event"] != "queue_low" {
 		t.Fatalf("event = %v, want queue_low", event["event"])
 	}
-	if event["action"] != "add_songs" {
-		t.Fatalf("action = %v, want add_songs", event["action"])
+	if event["command_template"] != `claw-radio playlist add '["Artist - Title", ...]'` {
+		t.Fatalf("command_template = %v, want playlist add template", event["command_template"])
 	}
 }
 
@@ -160,17 +159,21 @@ func TestPollReturnsBanterNeededJSONPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poll failed: %v", err)
 	}
-	if !strings.Contains(stdout, "\"event\":\"banter_needed\"") {
-		t.Fatalf("stdout = %q, want banter_needed json event", stdout)
+	var out map[string]interface{}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("parse poll json: %v", err)
 	}
-	if strings.Contains(stdout, "\"path\":") {
+	if out["event"] != "banter_needed" {
+		t.Fatalf("event = %v, want banter_needed", out["event"])
+	}
+	if _, ok := out["path"]; ok {
 		t.Fatalf("stdout should not expose internal path: %q", stdout)
 	}
-	if !strings.Contains(stdout, "\"upcoming_song\":\"SZA - Saturn\"") {
-		t.Fatalf("stdout = %q, want upcoming_song display", stdout)
+	if out["upcoming_song"] != "SZA - Saturn" {
+		t.Fatalf("upcoming_song = %v, want SZA - Saturn", out["upcoming_song"])
 	}
-	if !strings.Contains(stdout, "\"action\":\"speak\"") {
-		t.Fatalf("stdout = %q, want speak action", stdout)
+	if out["command_template"] != `claw-radio say "<banter>"` {
+		t.Fatalf("command_template = %v, want say template", out["command_template"])
 	}
 }
 
@@ -297,8 +300,8 @@ func TestPollReturnsEngineStoppedWhenRadioNotRunning(t *testing.T) {
 	if event["event"] != "engine_stopped" {
 		t.Fatalf("event = %v, want engine_stopped", event["event"])
 	}
-	if event["action"] != "restart" {
-		t.Fatalf("action = %v, want restart", event["action"])
+	if event["command"] != "claw-radio start" {
+		t.Fatalf("command = %v, want claw-radio start", event["command"])
 	}
 }
 

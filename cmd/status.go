@@ -135,15 +135,18 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 	defer client.Close()
 
 	snapshot.Playback = readPlaybackStatus(client)
+	readyCount := 0
 	currentPath, _ := readStringProperty(client, "path")
 	if overview, ok := readPlaylistOverview(cfg, client); ok {
 		snapshot.Banter = overview.Banter
 		queueSnapshot := station.BuildPlaylistSnapshot(cfg, queueSeeds, currentPath, overview.RemainingPaths)
 		if len(queueSeeds) > 0 || len(queueSnapshot.Songs) > 0 {
-			snapshot.Queue.Upcoming = queueSnapshot.Ready
+			snapshot.Queue.Upcoming = len(queueSnapshot.Songs)
 			snapshot.Queue.Preparing = queueSnapshot.Preparing
+			readyCount = queueSnapshot.Ready
 		} else {
 			snapshot.Queue.Upcoming = overview.UpcomingSongs
+			readyCount = overview.UpcomingSongs
 		}
 	} else if count, err := client.PlaylistCount(); err == nil {
 		upcoming := count
@@ -151,11 +154,12 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 			upcoming--
 		}
 		snapshot.Queue.Upcoming = upcoming
+		readyCount = upcoming
 	}
 	if snapshot.Playback != nil && snapshot.Playback.State == "idle" && (snapshot.Queue.Upcoming > 0 || snapshot.Queue.Preparing > 0) {
 		snapshot.Playback.State = "buffering"
 	}
-	if snapshot.Queue.Preparing > 0 && snapshot.Queue.Upcoming == 0 && snapshot.Playback != nil && snapshot.Playback.State == "buffering" {
+	if snapshot.Queue.Preparing > 0 && readyCount == 0 && snapshot.Playback != nil && snapshot.Playback.State == "buffering" {
 		snapshot.Warning = "having trouble preparing the next song"
 	}
 

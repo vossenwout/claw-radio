@@ -238,7 +238,7 @@ func TestStatusJSONExcludesQueuedBanterFromUpcomingAndShowsPreview(t *testing.T)
 	}
 }
 
-func TestStatusJSONSeparatesReadyAndPreparingSongs(t *testing.T) {
+func TestStatusJSONReportsTotalUpcomingAndPreparingSongs(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")
 	cacheDir := filepath.Join(tmp, "cache")
@@ -307,8 +307,8 @@ func TestStatusJSONSeparatesReadyAndPreparingSongs(t *testing.T) {
 	}
 
 	out := decodeStatusJSONForTest(t, stdout)
-	if out.Queue.Upcoming != 1 {
-		t.Fatalf("queue.upcoming = %d, want 1", out.Queue.Upcoming)
+	if out.Queue.Upcoming != 2 {
+		t.Fatalf("queue.upcoming = %d, want 2", out.Queue.Upcoming)
 	}
 	if out.Queue.Preparing != 1 {
 		t.Fatalf("queue.preparing = %d, want 1", out.Queue.Preparing)
