@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,6 +177,67 @@ func TestStatusJSONUsesPlaylistCurrentIndexForUpcomingCount(t *testing.T) {
 	}
 }
 
+func TestStatusJSONExcludesQueuedBanterFromUpcomingAndShowsPreview(t *testing.T) {
+	tmp := t.TempDir()
+	banterDir := filepath.Join(tmp, "tts", "banter")
+	if err := os.MkdirAll(banterDir, 0o755); err != nil {
+		t.Fatalf("mkdir banter dir: %v", err)
+	}
+	banterPath := filepath.Join(banterDir, "intro.aiff")
+	banterText := "This is a very long banter line that should be clipped in status so the output stays readable and tidy."
+	if err := os.WriteFile(banterPath+".meta.json", mustRawJSON(t, map[string]string{"text": banterText}), 0o644); err != nil {
+		t.Fatalf("write banter sidecar: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{StateDir: filepath.Join(tmp, "state"), QueueDepth: 5},
+		TTS:     config.TTSConfig{DataDir: filepath.Join(tmp, "tts"), Socket: filepath.Join(tmp, "missing-tts.sock")},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 114)
+
+	playlist := mustRawJSON(t, []map[string]interface{}{
+		{"filename": filepath.Join(tmp, "cache", "current.opus"), "current": true, "playing": true},
+		{"filename": banterPath},
+		{"filename": filepath.Join(tmp, "cache", "next-song.opus")},
+	})
+
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"media-title": mustRawJSON(t, "Current Song"),
+			"time-pos":    mustRawJSON(t, 10.0),
+			"duration":    mustRawJSON(t, 200.0),
+			"volume":      mustRawJSON(t, 100),
+			"playlist":    playlist,
+		},
+		playlistCount: 3,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 114 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Queue.Upcoming != 1 {
+		t.Fatalf("queue.upcoming = %d, want 1", out.Queue.Upcoming)
+	}
+	if out.Banter == "" {
+		t.Fatal("banter preview missing")
+	}
+	if len([]rune(out.Banter)) > statusBanterPreviewLimit {
+		t.Fatalf("banter preview too long: %q", out.Banter)
+	}
+	if !strings.HasSuffix(out.Banter, "...") {
+		t.Fatalf("banter preview = %q, want ellipsis", out.Banter)
+	}
+}
+
 func TestStatusJSONShowsBufferingWhenIdleWithPendingPlaylistSeeds(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")
@@ -221,6 +283,12 @@ func TestStatusJSONShowsBufferingWhenIdleWithPendingPlaylistSeeds(t *testing.T) 
 	}
 	if out.Playback.State != "buffering" {
 		t.Fatalf("playback.state = %q, want buffering", out.Playback.State)
+	}
+	if out.Queue.Preparing != 1 {
+		t.Fatalf("queue.preparing = %d, want 1", out.Queue.Preparing)
+	}
+	if out.Warning != "having trouble preparing the next song" {
+		t.Fatalf("warning = %q, want %q", out.Warning, "having trouble preparing the next song")
 	}
 }
 
@@ -423,7 +491,7 @@ func TestStatusJSONUsesYouTubeOEmbedFallback(t *testing.T) {
 	}
 }
 
-func TestStatusJSONIncludesStationSeedCount(t *testing.T) {
+func TestStatusJSONIncludesPreparingCountFromStationFile(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -458,11 +526,8 @@ func TestStatusJSONIncludesStationSeedCount(t *testing.T) {
 	}
 
 	out := decodeStatusJSONForTest(t, stdout)
-	if out.Station == nil {
-		t.Fatalf("station missing from output: %s", stdout)
-	}
-	if out.Station.Seeds != 48 {
-		t.Fatalf("station.seeds = %d, want 48", out.Station.Seeds)
+	if out.Queue.Preparing != 48 {
+		t.Fatalf("queue.preparing = %d, want 48", out.Queue.Preparing)
 	}
 }
 
@@ -582,7 +647,7 @@ func TestStatusJSONMatchesSchema(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &top); err != nil {
 		t.Fatalf("output is not valid json: %v", err)
 	}
-	for _, key := range []string{"engine", "station", "playback", "queue", "controller", "tts"} {
+	for _, key := range []string{"engine", "playback", "queue", "controller", "tts"} {
 		if _, ok := top[key]; !ok {
 			t.Fatalf("missing %q in schema: %s", key, stdout)
 		}
@@ -592,8 +657,8 @@ func TestStatusJSONMatchesSchema(t *testing.T) {
 	if out.Engine != "running" || out.Controller != "running" || out.TTS != "warm" {
 		t.Fatalf("unexpected top-level values: %#v", out)
 	}
-	if out.Station == nil || out.Station.Seeds != 48 || out.Station.Label != "Night Drive" {
-		t.Fatalf("unexpected station payload: %#v", out.Station)
+	if out.Queue.Upcoming != 3 || out.Queue.Preparing != 48 {
+		t.Fatalf("unexpected queue payload: %#v", out.Queue)
 	}
 	if out.Playback == nil || out.Playback.State == "" || out.Playback.Title == "" {
 		t.Fatalf("unexpected playback payload: %#v", out.Playback)
@@ -610,16 +675,12 @@ func repeatedStringSlice(value string, count int) []string {
 
 type statusOutputForTest struct {
 	Engine     string                 `json:"engine"`
-	Station    *statusStationForTest  `json:"station,omitempty"`
 	Playback   *statusPlaybackForTest `json:"playback,omitempty"`
 	Queue      statusQueueForTest     `json:"queue"`
+	Banter     string                 `json:"banter,omitempty"`
+	Warning    string                 `json:"warning,omitempty"`
 	Controller string                 `json:"controller"`
 	TTS        string                 `json:"tts"`
-}
-
-type statusStationForTest struct {
-	Label string `json:"label"`
-	Seeds int    `json:"seeds"`
 }
 
 type statusPlaybackForTest struct {
@@ -631,7 +692,8 @@ type statusPlaybackForTest struct {
 }
 
 type statusQueueForTest struct {
-	Upcoming int `json:"upcoming"`
+	Upcoming  int `json:"upcoming"`
+	Preparing int `json:"preparing"`
 }
 
 type fakeStatusMPVClient struct {

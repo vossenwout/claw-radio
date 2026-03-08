@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/vossenwout/claw-radio/internal/config"
@@ -56,12 +59,42 @@ func clearStationData(cfg *config.Config) (bool, error) {
 		if !fileExists(path) {
 			continue
 		}
-		if err := removeAllFn(path); err != nil {
+		if err := removeAllWithRetry(path); err != nil {
 			return changed, fmt.Errorf("clear path %s: %w", path, err)
 		}
 		changed = true
 	}
 	return changed, nil
+}
+
+func removeAllWithRetry(path string) error {
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		err := removeAllFn(path)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		lastErr = err
+		if !isRetryableRemoveAllErr(err) {
+			return err
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return nil
+}
+
+func isRetryableRemoveAllErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EBUSY) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "directory not empty") || strings.Contains(msg, "resource busy")
 }
 
 func stopRuntime(cfg *config.Config) (bool, error) {

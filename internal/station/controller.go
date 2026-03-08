@@ -20,6 +20,8 @@ import (
 const (
 	defaultQueueDepth = 5
 	safetyTick        = 2 * time.Second
+	maxResolvePerFill = 1
+	queueLowThreshold = 1
 )
 
 type mpvClient interface {
@@ -62,12 +64,13 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 	defer client.Close()
 
 	svc := &service{
-		cfg:    cfg,
-		st:     st,
-		client: client,
-		prov:   prov,
-		log:    log,
-		events: NewAgentEventStore(cfg.Station.StateDir),
+		cfg:           cfg,
+		st:            st,
+		client:        client,
+		prov:          prov,
+		log:           log,
+		events:        NewAgentEventStore(cfg.Station.StateDir),
+		queueLowArmed: true,
 	}
 	if err := svc.events.Ensure(); err != nil {
 		svc.logf("ensure agent events failed: %v", err)
@@ -93,6 +96,7 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 	if err := svc.fillQueue(); err != nil {
 		svc.logf("initial fillQueue failed: %v", err)
 	}
+	svc.emitQueueLowIfNeeded()
 
 	ticker := time.NewTicker(safetyTick)
 	defer ticker.Stop()
@@ -113,6 +117,7 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 				if err := svc.handleTrackStarted(); err != nil {
 					svc.logf("handleTrackStarted failed: %v", err)
 				}
+				svc.emitQueueLowIfNeeded()
 			}
 			if name, _ := event["event"].(string); name == "end-file" {
 				if err := svc.fillQueue(); err != nil {
@@ -124,6 +129,7 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 			if err := svc.fillQueue(); err != nil {
 				svc.logf("fillQueue on ticker failed: %v", err)
 			}
+			svc.emitQueueLowIfNeeded()
 		case <-sigCh:
 			svc.emitEngineStopped()
 			svc.saveState()
@@ -133,18 +139,27 @@ func Run(cfg *config.Config, prov provider.Provider, log io.Writer) error {
 }
 
 type service struct {
-	cfg    *config.Config
-	st     *Station
-	client mpvClient
-	prov   provider.Provider
-	log    io.Writer
-	events *AgentEventStore
+	cfg           *config.Config
+	st            *Station
+	client        mpvClient
+	prov          provider.Provider
+	log           io.Writer
+	events        *AgentEventStore
+	queueLowArmed bool
+	queueLowCount int
+	queueLowSeen  bool
 }
 
 type prefetchedSong struct {
 	AudioPath string
 	SongKey   string
 	VideoID   string
+}
+
+type playlistEntry struct {
+	Filename string `json:"filename"`
+	Current  bool   `json:"current"`
+	Playing  bool   `json:"playing"`
 }
 
 func (s *service) pendingIntroExists() bool {
@@ -225,6 +240,9 @@ func (s *service) emitBanterNeededForUpcoming(currentPath string) error {
 	if !ok {
 		return nil
 	}
+	if isBanterPath(s.cfg, nextSong.Path) {
+		return nil
+	}
 	if sameMediaPath(currentPath, nextSong.Path) {
 		return nil
 	}
@@ -271,13 +289,21 @@ func (s *service) emitBanterNeededForUpcoming(currentPath string) error {
 }
 
 func (s *service) emitQueueLowIfNeeded() {
-	count, err := s.client.PlaylistCount()
+	count, err := upcomingPlaylistCount(s.client)
 	if err != nil {
 		return
 	}
-	if count > 2 {
+	if count > queueLowThreshold {
+		s.queueLowArmed = true
+		s.queueLowSeen = false
 		return
 	}
+	if !s.queueLowArmed && s.queueLowSeen && count >= s.queueLowCount {
+		return
+	}
+	s.queueLowArmed = false
+	s.queueLowSeen = true
+	s.queueLowCount = count
 	depth := s.cfg.Station.QueueDepth
 	if depth <= 0 {
 		depth = defaultQueueDepth
@@ -289,6 +315,81 @@ func (s *service) emitQueueLowIfNeeded() {
 		Count:   count,
 		Depth:   depth,
 	})
+}
+
+func readPlaylistEntries(client mpvClient) ([]playlistEntry, int, error) {
+	raw, err := client.Get("playlist")
+	if err != nil {
+		return nil, -1, err
+	}
+
+	var items []playlistEntry
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, -1, err
+	}
+
+	currentIndex := -1
+	for i, item := range items {
+		if item.Current || item.Playing {
+			currentIndex = i
+			break
+		}
+	}
+
+	return items, currentIndex, nil
+}
+
+func upcomingPlaylistCount(client mpvClient) (int, error) {
+	items, currentIndex, err := readPlaylistEntries(client)
+	if err != nil {
+		count, err := client.PlaylistCount()
+		if err != nil {
+			return 0, err
+		}
+		if count > 0 {
+			if _, ok := readStringPropertyCompat(client, "path"); ok {
+				count--
+			}
+		}
+		if count < 0 {
+			count = 0
+		}
+		return count, nil
+	}
+
+	if len(items) == 0 {
+		return 0, nil
+	}
+	if currentIndex < 0 {
+		return len(items), nil
+	}
+
+	upcoming := len(items) - currentIndex - 1
+	if upcoming < 0 {
+		upcoming = 0
+	}
+	return upcoming, nil
+}
+
+func remainingPlaylistPaths(client mpvClient) ([]string, error) {
+	items, currentIndex, err := readPlaylistEntries(client)
+	if err != nil {
+		return client.PlaylistPaths()
+	}
+
+	start := 0
+	if currentIndex >= 0 {
+		start = currentIndex
+	}
+
+	paths := make([]string, 0, len(items)-start)
+	for _, item := range items[start:] {
+		path := strings.TrimSpace(item.Filename)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }
 
 func (s *service) emitEngineStopped() {
@@ -330,29 +431,12 @@ func (s *service) enqueuePendingIntro() error {
 }
 
 func (s *service) peekNextSong() (AgentSong, bool, error) {
-	raw, err := s.client.Get("playlist")
+	items, currentIndex, err := readPlaylistEntries(s.client)
 	if err != nil {
-		return AgentSong{}, false, err
-	}
-
-	var items []struct {
-		Filename string `json:"filename"`
-		Current  bool   `json:"current"`
-		Playing  bool   `json:"playing"`
-	}
-	if err := json.Unmarshal(raw, &items); err != nil {
 		return AgentSong{}, false, err
 	}
 	if len(items) == 0 {
 		return AgentSong{}, false, nil
-	}
-
-	currentIndex := -1
-	for i, item := range items {
-		if item.Current || item.Playing {
-			currentIndex = i
-			break
-		}
 	}
 	if currentIndex < 0 {
 		return AgentSong{}, false, nil
@@ -531,10 +615,14 @@ func isBanterPath(cfg *config.Config, mediaPath string) bool {
 
 func (s *service) fillQueue() error {
 	s.refreshQueueFromDisk()
+	if currentPath, ok := readStringPropertyCompat(s.client, "path"); ok {
+		s.consumePlayedSeedForPath(currentPath)
+		s.refreshQueueFromDisk()
+	}
 
-	count, err := s.client.PlaylistCount()
+	count, err := upcomingPlaylistCount(s.client)
 	if err != nil {
-		return fmt.Errorf("read playlist count: %w", err)
+		return fmt.Errorf("read upcoming playlist count: %w", err)
 	}
 
 	target := s.cfg.Station.QueueDepth
@@ -546,7 +634,7 @@ func (s *service) fillQueue() error {
 		return s.gcCache()
 	}
 	queued := s.queuedSeedKeys()
-	added := false
+	resolveAttempts := 0
 	for _, seed := range s.st.Seeds {
 		if count >= target {
 			break
@@ -558,6 +646,10 @@ func (s *service) fillQueue() error {
 		if _, exists := queued[songKey]; exists {
 			continue
 		}
+		if resolveAttempts >= maxResolvePerFill {
+			break
+		}
+		resolveAttempts++
 		audioPath, err := s.prov.Resolve(seed, s.cfg.Station.CacheDir)
 		if err != nil {
 			s.logf("resolve seed %q failed: %v", seed, err)
@@ -575,14 +667,11 @@ func (s *service) fillQueue() error {
 		}
 		queued[songKey] = struct{}{}
 		count++
-		added = true
 	}
-	if added {
-		currentPath, _ := readStringPropertyCompat(s.client, "path")
-		if currentPath != "" && !isBanterPath(s.cfg, currentPath) {
-			if err := s.emitBanterNeededForUpcoming(currentPath); err != nil {
-				s.logf("emit banter cue after queue update failed: %v", err)
-			}
+	currentPathNow, _ := readStringPropertyCompat(s.client, "path")
+	if currentPathNow != "" && !isBanterPath(s.cfg, currentPathNow) {
+		if err := s.emitBanterNeededForUpcoming(currentPathNow); err != nil {
+			s.logf("emit banter cue after queue update failed: %v", err)
 		}
 	}
 	return s.gcCache()
@@ -590,7 +679,7 @@ func (s *service) fillQueue() error {
 
 func (s *service) queuedSeedKeys() map[string]struct{} {
 	keys := map[string]struct{}{}
-	paths, err := s.client.PlaylistPaths()
+	paths, err := remainingPlaylistPaths(s.client)
 	if err != nil {
 		return keys
 	}

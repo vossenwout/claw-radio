@@ -38,6 +38,14 @@ func TestSayWhenMPVNotRunningQueuesIntroForNextStart(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(stateDir, "pending-intro.json")); statErr != nil {
 		t.Fatalf("pending intro file missing: %v", statErr)
 	}
+	metaPath := filepath.Join(cfg.TTS.DataDir, "banter", "123456789.wav.meta.json")
+	data, readErr := os.ReadFile(metaPath)
+	if readErr != nil {
+		t.Fatalf("banter metadata missing: %v", readErr)
+	}
+	if !strings.Contains(string(data), `"text":"hello"`) {
+		t.Fatalf("banter metadata = %q, want text payload", string(data))
+	}
 }
 
 func TestSayWhenTTSUnavailableExitsFour(t *testing.T) {
@@ -95,6 +103,13 @@ func TestSayOnSuccessPrintsQueuedBanterAndExitsZero(t *testing.T) {
 	}
 	if ttsClient.lastVoicePath != "" {
 		t.Fatalf("voice path = %q, want empty string", ttsClient.lastVoicePath)
+	}
+	data, readErr := os.ReadFile(ttsClient.lastOutPath + ".meta.json")
+	if readErr != nil {
+		t.Fatalf("banter metadata missing: %v", readErr)
+	}
+	if !strings.Contains(string(data), `"text":"hello"`) {
+		t.Fatalf("banter metadata = %q, want text payload", string(data))
 	}
 }
 

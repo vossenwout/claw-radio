@@ -24,16 +24,12 @@ type statusMPVClient interface {
 
 type statusSnapshot struct {
 	Engine     string          `json:"engine"`
-	Station    *statusStation  `json:"station,omitempty"`
 	Playback   *statusPlayback `json:"playback,omitempty"`
 	Queue      statusQueue     `json:"queue"`
+	Banter     string          `json:"banter,omitempty"`
+	Warning    string          `json:"warning,omitempty"`
 	Controller string          `json:"controller"`
 	TTS        string          `json:"tts"`
-}
-
-type statusStation struct {
-	Label string `json:"label"`
-	Seeds int    `json:"seeds"`
 }
 
 type statusPlayback struct {
@@ -45,13 +41,21 @@ type statusPlayback struct {
 }
 
 type statusQueue struct {
-	Upcoming int `json:"upcoming"`
+	Upcoming  int `json:"upcoming"`
+	Preparing int `json:"preparing"`
 }
 
 type statusStationFile struct {
-	Label string   `json:"label"`
 	Seeds []string `json:"seeds"`
 }
+
+type statusPlaylistEntry struct {
+	Filename string `json:"filename"`
+	Current  bool   `json:"current"`
+	Playing  bool   `json:"playing"`
+}
+
+const statusBanterPreviewLimit = 80
 
 var (
 	statusJSONFlag bool
@@ -107,8 +111,8 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 		return snapshot
 	}
 
-	if st, ok := readStationSummary(cfg.Station.StateDir); ok {
-		snapshot.Station = st
+	if preparing, ok := readPreparingCount(cfg.Station.StateDir); ok {
+		snapshot.Queue.Preparing = preparing
 	}
 
 	if pidFileRunning(pidFilePath(mpvPIDFileName)) {
@@ -129,8 +133,9 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 	defer client.Close()
 
 	snapshot.Playback = readPlaybackStatus(client)
-	if upcoming, ok := readUpcomingFromPlaylist(client); ok {
+	if upcoming, banter, ok := readUpcomingFromPlaylist(cfg, client); ok {
 		snapshot.Queue.Upcoming = upcoming
+		snapshot.Banter = banter
 	} else if count, err := client.PlaylistCount(); err == nil {
 		upcoming := count
 		if snapshot.Playback != nil && (snapshot.Playback.State == "playing" || snapshot.Playback.State == "paused" || snapshot.Playback.State == "buffering") && upcoming > 0 {
@@ -138,8 +143,11 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 		}
 		snapshot.Queue.Upcoming = upcoming
 	}
-	if snapshot.Playback != nil && snapshot.Playback.State == "idle" && (snapshot.Queue.Upcoming > 0 || (snapshot.Station != nil && snapshot.Station.Seeds > 0)) {
+	if snapshot.Playback != nil && snapshot.Playback.State == "idle" && (snapshot.Queue.Upcoming > 0 || snapshot.Queue.Preparing > 0) {
 		snapshot.Playback.State = "buffering"
+	}
+	if snapshot.Queue.Preparing > 0 && snapshot.Queue.Upcoming == 0 && snapshot.Playback != nil && snapshot.Playback.State == "buffering" {
+		snapshot.Warning = "having trouble preparing the next song"
 	}
 
 	return snapshot
@@ -169,25 +177,22 @@ func isProcessRunning(pid int) bool {
 	return true
 }
 
-func readStationSummary(stateDir string) (*statusStation, bool) {
+func readPreparingCount(stateDir string) (int, bool) {
 	if strings.TrimSpace(stateDir) == "" {
-		return nil, false
+		return 0, false
 	}
 
 	data, err := statusReadFileFn(filepath.Join(stateDir, "station.json"))
 	if err != nil {
-		return nil, false
+		return 0, false
 	}
 
 	var station statusStationFile
 	if err := json.Unmarshal(data, &station); err != nil {
-		return nil, false
+		return 0, false
 	}
 
-	return &statusStation{
-		Label: station.Label,
-		Seeds: len(station.Seeds),
-	}, true
+	return len(station.Seeds), true
 }
 
 func readPlaybackStatus(client statusMPVClient) *statusPlayback {
@@ -260,20 +265,17 @@ func readFloatProperty(client statusMPVClient, prop string) (float64, bool) {
 	return 0, false
 }
 
-func readUpcomingFromPlaylist(client statusMPVClient) (int, bool) {
+func readUpcomingFromPlaylist(cfg *config.Config, client statusMPVClient) (int, string, bool) {
 	raw, err := client.Get("playlist")
 	if err != nil {
-		return 0, false
+		return 0, "", false
 	}
-	var items []struct {
-		Current bool `json:"current"`
-		Playing bool `json:"playing"`
-	}
+	var items []statusPlaylistEntry
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return 0, false
+		return 0, "", false
 	}
 	if len(items) == 0 {
-		return 0, true
+		return 0, "", true
 	}
 	currentIndex := -1
 	for i, item := range items {
@@ -282,14 +284,70 @@ func readUpcomingFromPlaylist(client statusMPVClient) (int, bool) {
 			break
 		}
 	}
-	if currentIndex < 0 {
-		return 0, true
+	start := 0
+	if currentIndex >= 0 {
+		start = currentIndex + 1
 	}
-	upcoming := len(items) - currentIndex - 1
-	if upcoming < 0 {
-		upcoming = 0
+
+	upcoming := 0
+	banter := ""
+	for _, item := range items[start:] {
+		path := strings.TrimSpace(item.Filename)
+		if path == "" {
+			continue
+		}
+		if isStatusBanterPath(cfg, path) {
+			if banter == "" {
+				banter = readStatusBanterText(path)
+				if banter == "" {
+					banter = "queued"
+				}
+			}
+			continue
+		}
+		upcoming++
 	}
-	return upcoming, true
+	return upcoming, banter, true
+}
+
+func isStatusBanterPath(cfg *config.Config, mediaPath string) bool {
+	if cfg == nil {
+		return false
+	}
+	base := strings.TrimSpace(cfg.TTS.DataDir)
+	path := strings.TrimSpace(mediaPath)
+	if base == "" || path == "" {
+		return false
+	}
+	banterDir := filepath.Join(base, "banter")
+	absBanter, errA := filepath.Abs(banterDir)
+	absPath, errB := filepath.Abs(path)
+	if errA != nil || errB != nil {
+		return strings.HasPrefix(path, banterDir+string(os.PathSeparator)) || path == banterDir
+	}
+	return strings.HasPrefix(absPath, absBanter+string(os.PathSeparator)) || absPath == absBanter
+}
+
+func readStatusBanterText(audioPath string) string {
+	data, err := statusReadFileFn(strings.TrimSpace(audioPath) + ".meta.json")
+	if err != nil {
+		return ""
+	}
+	var meta struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return ""
+	}
+	text := strings.Join(strings.Fields(strings.TrimSpace(meta.Text)), " ")
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= statusBanterPreviewLimit {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:statusBanterPreviewLimit-3])) + "..."
 }
 
 func detectTTSStatus(cfg *config.Config) string {
@@ -321,11 +379,6 @@ func ttsSocketResponsive(socketPath string) bool {
 
 func renderHumanStatus(w io.Writer, snapshot statusSnapshot) {
 	fmt.Fprintf(w, "engine: %s\n", snapshot.Engine)
-	if snapshot.Station != nil {
-		fmt.Fprintf(w, "station: label=%q seeds=%d\n", snapshot.Station.Label, snapshot.Station.Seeds)
-	} else {
-		fmt.Fprintln(w, "station: unavailable")
-	}
 
 	if snapshot.Playback != nil {
 		fmt.Fprintf(
@@ -341,7 +394,15 @@ func renderHumanStatus(w io.Writer, snapshot statusSnapshot) {
 		fmt.Fprintln(w, "playback: unavailable")
 	}
 
-	fmt.Fprintf(w, "upcoming songs: %d\n", snapshot.Queue.Upcoming)
+	fmt.Fprintf(w, "playlist: upcoming=%d preparing=%d\n", snapshot.Queue.Upcoming, snapshot.Queue.Preparing)
+	if strings.TrimSpace(snapshot.Banter) != "" {
+		fmt.Fprintf(w, "banter: %q\n", snapshot.Banter)
+	} else {
+		fmt.Fprintln(w, "banter: none queued")
+	}
+	if strings.TrimSpace(snapshot.Warning) != "" {
+		fmt.Fprintf(w, "warning: %s\n", snapshot.Warning)
+	}
 	fmt.Fprintf(w, "controller: %s\n", snapshot.Controller)
 	fmt.Fprintf(w, "tts: %s\n", snapshot.TTS)
 }

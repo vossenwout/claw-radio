@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -55,6 +57,9 @@ func runSay(cmd *cobra.Command, text string) error {
 	if err := newSayTTSClientFn(cfg).Render(text, "", outPath); err != nil {
 		return exitCode(fmt.Errorf("tts unavailable: %w", err), 4)
 	}
+	if err := writeBanterSidecar(outPath, text); err != nil {
+		return fmt.Errorf("save banter metadata: %w", err)
+	}
 
 	store := station.NewAgentEventStore(cfg.Station.StateDir)
 	mpvClient, err := dialPlaybackClient(cfg.MPV.Socket)
@@ -77,6 +82,17 @@ func runSay(cmd *cobra.Command, text string) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "queued intro banter for next start")
 	return nil
+}
+
+func writeBanterSidecar(audioPath, text string) error {
+	payload := struct {
+		Text string `json:"text"`
+	}{Text: strings.TrimSpace(text)}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(strings.TrimSpace(audioPath)+".meta.json", data, 0o644)
 }
 
 func init() {
