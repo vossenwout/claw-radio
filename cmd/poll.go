@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/vossenwout/claw-radio/internal/config"
 	"github.com/vossenwout/claw-radio/internal/station"
 )
 
@@ -50,7 +51,7 @@ func runPoll(cmd *cobra.Command, timeout time.Duration) error {
 	}
 
 	store := station.NewAgentEventStore(cfg.Station.StateDir)
-	event, err := store.Next(timeout)
+	event, err := nextRelevantPollEvent(cfg, store, timeout)
 	if err != nil {
 		return fmt.Errorf("poll event: %w", err)
 	}
@@ -88,6 +89,8 @@ func toPollCue(event station.AgentEvent) pollCue {
 			title := strings.TrimSpace(event.NextSong.Title)
 			if artist != "" && title != "" {
 				cue.UpcomingSong = artist + " - " + title
+			} else if strings.TrimSpace(event.NextSong.Seed) != "" {
+				cue.UpcomingSong = strings.TrimSpace(event.NextSong.Seed)
 			} else {
 				cue.UpcomingSong = strings.TrimSpace(title)
 			}
@@ -109,6 +112,107 @@ func toPollCue(event station.AgentEvent) pollCue {
 	}
 
 	return cue
+}
+
+func nextRelevantPollEvent(cfg *config.Config, store *station.AgentEventStore, timeout time.Duration) (station.AgentEvent, error) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return station.AgentEvent{Event: "timeout", TS: time.Now().Unix()}, nil
+		}
+
+		event, err := store.Next(remaining)
+		if err != nil {
+			return station.AgentEvent{}, err
+		}
+		if event.Event == "timeout" {
+			return event, nil
+		}
+		if pollEventStillRelevant(cfg, store, event) {
+			return event, nil
+		}
+	}
+}
+
+func pollEventStillRelevant(cfg *config.Config, store *station.AgentEventStore, event station.AgentEvent) bool {
+	switch event.Event {
+	case "banter_needed":
+		return banterEventStillRelevant(cfg, store, event)
+	case "queue_low":
+		return queueLowEventStillRelevant(cfg)
+	default:
+		return true
+	}
+}
+
+func banterEventStillRelevant(cfg *config.Config, store *station.AgentEventStore, event station.AgentEvent) bool {
+	if strings.TrimSpace(event.EventID) == "" {
+		return true
+	}
+	pending, err := store.LoadPendingBanter()
+	if err != nil {
+		return true
+	}
+	if pending == nil || strings.TrimSpace(pending.EventID) != strings.TrimSpace(event.EventID) {
+		return false
+	}
+	if cfg == nil || event.NextSong == nil {
+		return true
+	}
+
+	currentPath, _, ok := loadPollRuntimeState(cfg)
+	if !ok {
+		return true
+	}
+	st, err := station.Load(cfg.Station.StateDir)
+	if err != nil || st == nil {
+		return true
+	}
+	nextSong, exists := station.NextAgentSong(st.Seeds, currentPath)
+	if !exists {
+		return false
+	}
+	return station.SameAgentSong(*event.NextSong, nextSong)
+}
+
+func queueLowEventStillRelevant(cfg *config.Config) bool {
+	if cfg == nil {
+		return true
+	}
+	currentPath, remainingPaths, ok := loadPollRuntimeState(cfg)
+	if !ok {
+		currentPath = ""
+		remainingPaths = nil
+	}
+	st, err := station.Load(cfg.Station.StateDir)
+	if err != nil || st == nil {
+		return true
+	}
+	snapshot := station.BuildPlaylistSnapshot(cfg, st.Seeds, currentPath, remainingPaths)
+	return snapshot.Ready+snapshot.Preparing <= station.QueueLowThreshold
+}
+
+func loadPollRuntimeState(cfg *config.Config) (string, []string, bool) {
+	if cfg == nil {
+		return "", nil, false
+	}
+	client, err := dialStatusMPVClientFn(cfg.MPV.Socket)
+	if err != nil {
+		return "", nil, false
+	}
+	defer client.Close()
+
+	currentPath, _ := readStringProperty(client, "path")
+	overview, ok := readPlaylistOverview(cfg, client)
+	if !ok {
+		return currentPath, nil, false
+	}
+	return currentPath, overview.RemainingPaths, true
 }
 
 func init() {

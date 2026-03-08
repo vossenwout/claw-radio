@@ -21,7 +21,7 @@ const (
 	defaultQueueDepth = 5
 	safetyTick        = 2 * time.Second
 	maxResolvePerFill = 1
-	queueLowThreshold = 1
+	QueueLowThreshold = 1
 )
 
 type mpvClient interface {
@@ -221,7 +221,7 @@ func (s *service) handleTrackStarted() error {
 	}
 	if currentPath != "" {
 		if pending, err := s.events.LoadPendingBanter(); err == nil && pending != nil {
-			if sameMediaPath(pending.NextSong.Path, currentPath) {
+			if SameAgentSong(pending.NextSong, songFromPath(currentPath)) {
 				_ = s.events.ClearPendingBanter()
 			}
 		}
@@ -233,22 +233,44 @@ func (s *service) handleTrackStarted() error {
 }
 
 func (s *service) emitBanterNeededForUpcoming(currentPath string) error {
-	nextSong, ok, err := s.peekNextSong()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
-	}
-	if isBanterPath(s.cfg, nextSong.Path) {
-		return nil
-	}
-	if sameMediaPath(currentPath, nextSong.Path) {
+	if s.events == nil {
 		return nil
 	}
 
-	if pending, err := s.events.LoadPendingBanter(); err == nil && pending != nil {
-		if sameMediaPath(pending.NextSong.Path, nextSong.Path) {
+	nextSong, ok := NextAgentSong(s.st.Seeds, currentPath)
+	if !ok {
+		fallbackSong, fallbackOK, err := s.peekNextSong()
+		if err != nil {
+			return err
+		}
+		if fallbackOK && !isBanterPath(s.cfg, fallbackSong.Path) && !SameAgentSong(fallbackSong, songFromPath(currentPath)) {
+			nextSong = fallbackSong
+			ok = true
+		}
+	}
+	if !ok {
+		return s.events.ClearPendingBanter()
+	}
+
+	queuedBanter, err := s.hasQueuedBanterBeforeNextSong()
+	if err != nil {
+		return err
+	}
+
+	pending, err := s.events.LoadPendingBanter()
+	if err == nil && pending != nil {
+		if queuedBanter || !SameAgentSong(pending.NextSong, nextSong) {
+			if err := s.events.ClearPendingBanter(); err != nil {
+				return err
+			}
+			pending = nil
+		}
+	}
+	if queuedBanter {
+		return nil
+	}
+	if pending != nil {
+		if SameAgentSong(pending.NextSong, nextSong) {
 			return nil
 		}
 	}
@@ -288,12 +310,35 @@ func (s *service) emitBanterNeededForUpcoming(currentPath string) error {
 	})
 }
 
+func (s *service) hasQueuedBanterBeforeNextSong() (bool, error) {
+	items, currentIndex, err := readPlaylistEntries(s.client)
+	if err != nil {
+		return false, err
+	}
+
+	start := 0
+	if currentIndex >= 0 {
+		start = currentIndex + 1
+	}
+	for _, item := range items[start:] {
+		path := strings.TrimSpace(item.Filename)
+		if path == "" {
+			continue
+		}
+		if isBanterPath(s.cfg, path) {
+			return true, nil
+		}
+		return false, nil
+	}
+	return false, nil
+}
+
 func (s *service) emitQueueLowIfNeeded() {
 	count, err := upcomingPlaylistCount(s.client)
 	if err != nil {
 		return
 	}
-	if count > queueLowThreshold {
+	if count > QueueLowThreshold {
 		s.queueLowArmed = true
 		s.queueLowSeen = false
 		return
@@ -470,8 +515,12 @@ func songFromPath(path string) AgentSong {
 			Display string `json:"display"`
 		}
 		if err := json.Unmarshal(data, &meta); err == nil {
+			song.Seed = strings.TrimSpace(meta.Seed)
 			song.Artist = strings.TrimSpace(meta.Artist)
 			song.Title = strings.TrimSpace(meta.Title)
+			if song.Seed == "" {
+				song.Seed = strings.TrimSpace(meta.Display)
+			}
 			if song.Artist == "" && song.Title == "" {
 				display := strings.TrimSpace(meta.Display)
 				if display == "" {
@@ -493,6 +542,13 @@ func songFromPath(path string) AgentSong {
 	if song.Title == "" {
 		base := filepath.Base(song.Path)
 		song.Title = strings.TrimSpace(strings.TrimSuffix(base, filepath.Ext(base)))
+	}
+	if song.Seed == "" {
+		if song.Artist != "" && song.Title != "" {
+			song.Seed = song.Artist + " - " + song.Title
+		} else {
+			song.Seed = song.Title
+		}
 	}
 
 	return song
@@ -619,6 +675,12 @@ func (s *service) fillQueue() error {
 		s.consumePlayedSeedForPath(currentPath)
 		s.refreshQueueFromDisk()
 	}
+	currentPathNow, _ := readStringPropertyCompat(s.client, "path")
+	if currentPathNow != "" && !isBanterPath(s.cfg, currentPathNow) {
+		if err := s.emitBanterNeededForUpcoming(currentPathNow); err != nil {
+			s.logf("emit banter cue before queue update failed: %v", err)
+		}
+	}
 
 	count, err := upcomingPlaylistCount(s.client)
 	if err != nil {
@@ -631,6 +693,9 @@ func (s *service) fillQueue() error {
 	}
 
 	if len(s.st.Seeds) == 0 {
+		if s.events != nil {
+			_ = s.events.ClearPendingBanter()
+		}
 		return s.gcCache()
 	}
 	queued := s.queuedSeedKeys()
@@ -668,7 +733,6 @@ func (s *service) fillQueue() error {
 		queued[songKey] = struct{}{}
 		count++
 	}
-	currentPathNow, _ := readStringPropertyCompat(s.client, "path")
 	if currentPathNow != "" && !isBanterPath(s.cfg, currentPathNow) {
 		if err := s.emitBanterNeededForUpcoming(currentPathNow); err != nil {
 			s.logf("emit banter cue after queue update failed: %v", err)

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vossenwout/claw-radio/internal/config"
 	"github.com/vossenwout/claw-radio/internal/mpv"
+	"github.com/vossenwout/claw-radio/internal/station"
 )
 
 type statusMPVClient interface {
@@ -45,14 +46,16 @@ type statusQueue struct {
 	Preparing int `json:"preparing"`
 }
 
-type statusStationFile struct {
-	Seeds []string `json:"seeds"`
-}
-
 type statusPlaylistEntry struct {
 	Filename string `json:"filename"`
 	Current  bool   `json:"current"`
 	Playing  bool   `json:"playing"`
+}
+
+type statusPlaylistOverview struct {
+	RemainingPaths []string
+	UpcomingSongs  int
+	Banter         string
 }
 
 const statusBanterPreviewLimit = 80
@@ -111,9 +114,8 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 		return snapshot
 	}
 
-	if preparing, ok := readPreparingCount(cfg.Station.StateDir); ok {
-		snapshot.Queue.Preparing = preparing
-	}
+	queueSeeds := loadStatusSeeds(cfg.Station.StateDir)
+	snapshot.Queue.Preparing = len(queueSeeds)
 
 	if pidFileRunning(pidFilePath(mpvPIDFileName)) {
 		snapshot.Engine = "running"
@@ -133,9 +135,16 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 	defer client.Close()
 
 	snapshot.Playback = readPlaybackStatus(client)
-	if upcoming, banter, ok := readUpcomingFromPlaylist(cfg, client); ok {
-		snapshot.Queue.Upcoming = upcoming
-		snapshot.Banter = banter
+	currentPath, _ := readStringProperty(client, "path")
+	if overview, ok := readPlaylistOverview(cfg, client); ok {
+		snapshot.Banter = overview.Banter
+		queueSnapshot := station.BuildPlaylistSnapshot(cfg, queueSeeds, currentPath, overview.RemainingPaths)
+		if len(queueSeeds) > 0 || len(queueSnapshot.Songs) > 0 {
+			snapshot.Queue.Upcoming = queueSnapshot.Ready
+			snapshot.Queue.Preparing = queueSnapshot.Preparing
+		} else {
+			snapshot.Queue.Upcoming = overview.UpcomingSongs
+		}
 	} else if count, err := client.PlaylistCount(); err == nil {
 		upcoming := count
 		if snapshot.Playback != nil && (snapshot.Playback.State == "playing" || snapshot.Playback.State == "paused" || snapshot.Playback.State == "buffering") && upcoming > 0 {
@@ -181,18 +190,19 @@ func readPreparingCount(stateDir string) (int, bool) {
 	if strings.TrimSpace(stateDir) == "" {
 		return 0, false
 	}
-
-	data, err := statusReadFileFn(filepath.Join(stateDir, "station.json"))
-	if err != nil {
+	st, err := station.Load(stateDir)
+	if err != nil || st == nil {
 		return 0, false
 	}
+	return len(st.Seeds), true
+}
 
-	var station statusStationFile
-	if err := json.Unmarshal(data, &station); err != nil {
-		return 0, false
+func loadStatusSeeds(stateDir string) []string {
+	st, err := station.Load(stateDir)
+	if err != nil || st == nil {
+		return nil
 	}
-
-	return len(station.Seeds), true
+	return append([]string(nil), st.Seeds...)
 }
 
 func readPlaybackStatus(client statusMPVClient) *statusPlayback {
@@ -265,17 +275,18 @@ func readFloatProperty(client statusMPVClient, prop string) (float64, bool) {
 	return 0, false
 }
 
-func readUpcomingFromPlaylist(cfg *config.Config, client statusMPVClient) (int, string, bool) {
+func readPlaylistOverview(cfg *config.Config, client statusMPVClient) (statusPlaylistOverview, bool) {
 	raw, err := client.Get("playlist")
 	if err != nil {
-		return 0, "", false
+		return statusPlaylistOverview{}, false
 	}
 	var items []statusPlaylistEntry
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return 0, "", false
+		return statusPlaylistOverview{}, false
 	}
+	overview := statusPlaylistOverview{}
 	if len(items) == 0 {
-		return 0, "", true
+		return overview, true
 	}
 	currentIndex := -1
 	for i, item := range items {
@@ -284,30 +295,38 @@ func readUpcomingFromPlaylist(cfg *config.Config, client statusMPVClient) (int, 
 			break
 		}
 	}
-	start := 0
+	pathStart := 0
 	if currentIndex >= 0 {
-		start = currentIndex + 1
+		pathStart = currentIndex
+	}
+	scanStart := 0
+	if currentIndex >= 0 {
+		scanStart = currentIndex + 1
 	}
 
-	upcoming := 0
-	banter := ""
-	for _, item := range items[start:] {
+	for i, item := range items {
 		path := strings.TrimSpace(item.Filename)
 		if path == "" {
 			continue
 		}
+		if i >= pathStart {
+			overview.RemainingPaths = append(overview.RemainingPaths, path)
+		}
+		if i < scanStart {
+			continue
+		}
 		if isStatusBanterPath(cfg, path) {
-			if banter == "" {
-				banter = readStatusBanterText(path)
-				if banter == "" {
-					banter = "queued"
+			if overview.Banter == "" {
+				overview.Banter = readStatusBanterText(path)
+				if overview.Banter == "" {
+					overview.Banter = "queued"
 				}
 			}
 			continue
 		}
-		upcoming++
+		overview.UpcomingSongs++
 	}
-	return upcoming, banter, true
+	return overview, true
 }
 
 func isStatusBanterPath(cfg *config.Config, mediaPath string) bool {

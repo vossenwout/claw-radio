@@ -3,8 +3,10 @@ package station
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vossenwout/claw-radio/internal/config"
 )
@@ -177,5 +179,68 @@ func TestPrefetchOneSeedForStartupResolvesWithoutAdvancingSeedIndex(t *testing.T
 	}
 	if st.seedIndex != 1 {
 		t.Fatalf("seedIndex = %d, want 1", st.seedIndex)
+	}
+}
+
+func TestFillQueueEmitsBanterNeededBeforeResolveCompletes(t *testing.T) {
+	stateDir := t.TempDir()
+	currentPath := filepath.Join(stateDir, "current.opus")
+	if err := os.WriteFile(currentPath+".meta.json", mustRaw(map[string]string{
+		"seed":    "Current Artist - Current Song",
+		"artist":  "Current Artist",
+		"title":   "Current Song",
+		"display": "Current Artist - Current Song",
+	}), 0o644); err != nil {
+		t.Fatalf("write current sidecar: %v", err)
+	}
+
+	st := &Station{StateDir: stateDir}
+	st.SetSeeds([]string{"Current Artist - Current Song", "SZA - Saturn"}, "")
+	if err := st.Save(); err != nil {
+		t.Fatalf("save station seed state: %v", err)
+	}
+
+	fakeClient := &fakeFillQueueMPVClient{
+		props: map[string]json.RawMessage{
+			"path": mustRaw(currentPath),
+			"playlist": mustRaw([]map[string]interface{}{
+				{"filename": currentPath, "current": true, "playing": true},
+			}),
+		},
+	}
+	store := NewAgentEventStore(stateDir)
+	svc := &service{
+		cfg: &config.Config{Station: config.StationConfig{
+			StateDir:   stateDir,
+			CacheDir:   filepath.Join(stateDir, "cache"),
+			QueueDepth: 2,
+		}},
+		st:     &Station{StateDir: stateDir},
+		client: fakeClient,
+		prov:   &fakeFillQueueProvider{resolveErr: errors.New("still resolving")},
+		events: store,
+	}
+
+	if err := svc.fillQueue(); err != nil {
+		t.Fatalf("fillQueue failed: %v", err)
+	}
+
+	event, err := store.Next(100 * time.Millisecond)
+	if err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	if event.Event != "banter_needed" {
+		t.Fatalf("event=%q, want banter_needed", event.Event)
+	}
+	if event.NextSong == nil || event.NextSong.Artist != "SZA" || event.NextSong.Title != "Saturn" {
+		t.Fatalf("next_song mismatch: %#v", event.NextSong)
+	}
+	if len(fakeClient.loadModes) != 0 {
+		t.Fatalf("load calls = %d, want 0 while resolve is failing", len(fakeClient.loadModes))
+	}
+
+	_, err = store.Next(50 * time.Millisecond)
+	if err != nil {
+		t.Fatalf("second read event: %v", err)
 	}
 }

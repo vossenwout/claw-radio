@@ -26,6 +26,7 @@ type AgentEventStore struct {
 }
 
 type AgentSong struct {
+	Seed   string `json:"seed,omitempty"`
 	Artist string `json:"artist,omitempty"`
 	Title  string `json:"title,omitempty"`
 	Path   string `json:"path,omitempty"`

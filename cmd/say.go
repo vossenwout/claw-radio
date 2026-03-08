@@ -68,6 +68,7 @@ func runSay(cmd *cobra.Command, text string) error {
 		if err := mpvClient.InsertNext(outPath); err != nil {
 			return fmt.Errorf("queue banter: %w", err)
 		}
+		_ = store.ClearPendingBanter()
 		fmt.Fprintln(cmd.OutOrStdout(), "queued banter")
 		return nil
 	}

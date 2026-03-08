@@ -1,8 +1,13 @@
 package station
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/vossenwout/claw-radio/internal/config"
 )
 
 func TestSetSeedsPickSeedInOrder(t *testing.T) {
@@ -131,5 +136,46 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(reloaded.PlayedSongKeys, []string{"song key", "another song"}) {
 		t.Fatalf("played song keys mismatch: got %v", reloaded.PlayedSongKeys)
+	}
+}
+
+func TestBuildPlaylistSnapshotSkipsCurrentSongAndMarksReadySongs(t *testing.T) {
+	stateDir := t.TempDir()
+	currentPath := filepath.Join(stateDir, "current.opus")
+	nextPath := filepath.Join(stateDir, "next.opus")
+	for _, entry := range []struct {
+		path string
+		seed string
+	}{
+		{path: currentPath, seed: "Current Artist - Current Song"},
+		{path: nextPath, seed: "SZA - Saturn"},
+	} {
+		data, _ := json.Marshal(map[string]string{"seed": entry.seed, "display": entry.seed})
+		if err := os.WriteFile(entry.path+".meta.json", data, 0o644); err != nil {
+			t.Fatalf("write sidecar: %v", err)
+		}
+	}
+
+	snapshot := BuildPlaylistSnapshot(
+		&config.Config{},
+		[]string{"Current Artist - Current Song", "SZA - Saturn", "Kendrick Lamar - Alright"},
+		currentPath,
+		[]string{currentPath, nextPath},
+	)
+
+	if len(snapshot.Songs) != 2 {
+		t.Fatalf("song count = %d, want 2", len(snapshot.Songs))
+	}
+	if snapshot.Ready != 1 {
+		t.Fatalf("ready = %d, want 1", snapshot.Ready)
+	}
+	if snapshot.Preparing != 1 {
+		t.Fatalf("preparing = %d, want 1", snapshot.Preparing)
+	}
+	if snapshot.Songs[0].Seed != "SZA - Saturn" || snapshot.Songs[0].Status != PlaylistSongReady {
+		t.Fatalf("first song = %#v, want ready SZA - Saturn", snapshot.Songs[0])
+	}
+	if snapshot.Songs[1].Seed != "Kendrick Lamar - Alright" || snapshot.Songs[1].Status != PlaylistSongPreparing {
+		t.Fatalf("second song = %#v, want preparing Kendrick Lamar - Alright", snapshot.Songs[1])
 	}
 }

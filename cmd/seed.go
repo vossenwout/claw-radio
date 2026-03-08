@@ -142,8 +142,34 @@ func runPlaylistView(cmd *cobra.Command, asJSON bool) error {
 		return nil
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Playlist (%d songs):\n", len(st.Seeds))
-	for i, song := range st.Seeds {
+	playlistSnapshot := station.BuildPlaylistSnapshot(cfg, st.Seeds, "", nil)
+	showStatuses := false
+	if pidFileRunning(pidFilePath(mpvPIDFileName)) {
+		client, err := dialStatusMPVClientFn(cfg.MPV.Socket)
+		if err == nil {
+			defer client.Close()
+			currentPath, _ := readStringProperty(client, "path")
+			if overview, ok := readPlaylistOverview(cfg, client); ok {
+				playlistSnapshot = station.BuildPlaylistSnapshot(cfg, st.Seeds, currentPath, overview.RemainingPaths)
+				showStatuses = true
+			}
+		}
+	}
+
+	rows := st.Seeds
+	if showStatuses {
+		rows = make([]string, 0, len(playlistSnapshot.Songs))
+		for _, song := range playlistSnapshot.Songs {
+			rows = append(rows, fmt.Sprintf("%s [%s]", song.Seed, song.Status))
+		}
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "Playlist is empty")
+		return nil
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Playlist (%d songs):\n", len(rows))
+	for i, song := range rows {
 		fmt.Fprintf(cmd.OutOrStdout(), "%d. %s\n", i+1, song)
 	}
 	return nil

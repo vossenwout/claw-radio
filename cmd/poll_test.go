@@ -174,6 +174,98 @@ func TestPollReturnsBanterNeededJSONPayload(t *testing.T) {
 	}
 }
 
+func TestPollSkipsStaleBanterCueForCurrentSong(t *testing.T) {
+	stateDir := t.TempDir()
+	cacheDir := filepath.Join(stateDir, "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	currentSeed := "mac miller - whats the use"
+	if err := os.WriteFile(filepath.Join(stateDir, "station.json"), mustRawJSON(t, map[string]interface{}{
+		"label": "",
+		"seeds": []string{currentSeed},
+	}), 0o644); err != nil {
+		t.Fatalf("write station.json: %v", err)
+	}
+	currentPath := filepath.Join(cacheDir, "current.opus")
+	if err := os.WriteFile(currentPath+".meta.json", mustRawJSON(t, map[string]string{
+		"seed":    currentSeed,
+		"artist":  "mac miller",
+		"title":   "whats the use",
+		"display": currentSeed,
+	}), 0o644); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(stateDir, "mock.sock")},
+		Station: config.StationConfig{StateDir: stateDir},
+	}
+	restoreRuntime := withRunningRuntimeForPollTests(t)
+	defer restoreRuntime()
+
+	store := station.NewAgentEventStore(stateDir)
+	if err := store.SavePendingBanter(station.PendingBanter{
+		EventID: "evt_1",
+		NextSong: station.AgentSong{
+			Seed:   currentSeed,
+			Artist: "mac miller",
+			Title:  "whats the use",
+			Path:   currentPath,
+		},
+	}); err != nil {
+		t.Fatalf("save pending banter: %v", err)
+	}
+	if err := store.Append(station.AgentEvent{
+		Event:   "banter_needed",
+		EventID: "evt_1",
+		NextSong: &station.AgentSong{
+			Seed:   currentSeed,
+			Artist: "mac miller",
+			Title:  "whats the use",
+			Path:   currentPath,
+		},
+	}); err != nil {
+		t.Fatalf("append banter event: %v", err)
+	}
+	if err := store.Append(station.AgentEvent{Event: "queue_low", Count: 0, Depth: 5}); err != nil {
+		t.Fatalf("append queue_low event: %v", err)
+	}
+
+	origLoad := loadConfigFn
+	loadConfigFn = func() (*config.Config, error) {
+		copy := *cfg
+		return &copy, nil
+	}
+	defer func() { loadConfigFn = origLoad }()
+
+	origDial := dialStatusMPVClientFn
+	dialStatusMPVClientFn = func(string) (statusMPVClient, error) {
+		return &fakeStatusMPVClient{
+			props: map[string]json.RawMessage{
+				"path": mustRawJSON(t, currentPath),
+				"playlist": mustRawJSON(t, []map[string]interface{}{
+					{"filename": currentPath, "current": true, "playing": true},
+				}),
+			},
+		}, nil
+	}
+	defer func() { dialStatusMPVClientFn = origDial }()
+
+	err, stdout, _ := executeCommandWithOutputForTest("poll", "--timeout", "1s")
+	if err != nil {
+		t.Fatalf("poll failed: %v", err)
+	}
+
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(stdout), &event); err != nil {
+		t.Fatalf("parse poll json: %v", err)
+	}
+	if event["event"] != "queue_low" {
+		t.Fatalf("event = %v, want queue_low after skipping stale banter", event["event"])
+	}
+}
+
 func TestPollReturnsEngineStoppedWhenRadioNotRunning(t *testing.T) {
 	stateDir := t.TempDir()
 	cfg := &config.Config{Station: config.StationConfig{StateDir: stateDir}}

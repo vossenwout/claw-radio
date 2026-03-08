@@ -238,6 +238,83 @@ func TestStatusJSONExcludesQueuedBanterFromUpcomingAndShowsPreview(t *testing.T)
 	}
 }
 
+func TestStatusJSONSeparatesReadyAndPreparingSongs(t *testing.T) {
+	tmp := t.TempDir()
+	stateDir := filepath.Join(tmp, "state")
+	cacheDir := filepath.Join(tmp, "cache")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+
+	currentSeed := "Current Artist - Current Song"
+	nextSeed := "SZA - Saturn"
+	laterSeed := "Kendrick Lamar - Alright"
+	if err := os.WriteFile(filepath.Join(stateDir, "station.json"), mustRawJSON(t, map[string]interface{}{
+		"label": "",
+		"seeds": []string{currentSeed, nextSeed, laterSeed},
+	}), 0o644); err != nil {
+		t.Fatalf("write station.json: %v", err)
+	}
+
+	currentPath := filepath.Join(cacheDir, "current.opus")
+	nextPath := filepath.Join(cacheDir, "next.opus")
+	for path, seed := range map[string]string{
+		currentPath: currentSeed,
+		nextPath:    nextSeed,
+	} {
+		if err := os.WriteFile(path+".meta.json", mustRawJSON(t, map[string]string{
+			"seed":    seed,
+			"display": seed,
+		}), 0o644); err != nil {
+			t.Fatalf("write sidecar: %v", err)
+		}
+	}
+
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{StateDir: stateDir, QueueDepth: 5},
+		TTS:     config.TTSConfig{Socket: filepath.Join(tmp, "missing-tts.sock")},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 115)
+
+	playlist := mustRawJSON(t, []map[string]interface{}{
+		{"filename": currentPath, "current": true, "playing": true},
+		{"filename": nextPath},
+	})
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"path":        mustRawJSON(t, currentPath),
+			"media-title": mustRawJSON(t, currentSeed),
+			"time-pos":    mustRawJSON(t, 12.0),
+			"duration":    mustRawJSON(t, 200.0),
+			"volume":      mustRawJSON(t, 100),
+			"playlist":    playlist,
+		},
+		playlistCount: 2,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 115 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Queue.Upcoming != 1 {
+		t.Fatalf("queue.upcoming = %d, want 1", out.Queue.Upcoming)
+	}
+	if out.Queue.Preparing != 1 {
+		t.Fatalf("queue.preparing = %d, want 1", out.Queue.Preparing)
+	}
+}
+
 func TestStatusJSONShowsBufferingWhenIdleWithPendingPlaylistSeeds(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")

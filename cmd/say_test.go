@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/vossenwout/claw-radio/internal/config"
 	"github.com/vossenwout/claw-radio/internal/mpv"
+	"github.com/vossenwout/claw-radio/internal/station"
 )
 
 func TestSayWhenMPVNotRunningQueuesIntroForNextStart(t *testing.T) {
@@ -110,6 +112,54 @@ func TestSayOnSuccessPrintsQueuedBanterAndExitsZero(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"text":"hello"`) {
 		t.Fatalf("banter metadata = %q, want text payload", string(data))
+	}
+}
+
+func TestSayOnSuccessClearsPendingBanterCue(t *testing.T) {
+	stateDir := t.TempDir()
+	socketPath := makePlaybackSocketPath(t, "say-clear-pending")
+	server := startPlaybackMPVServer(t, socketPath)
+
+	store := station.NewAgentEventStore(stateDir)
+	if err := store.SavePendingBanter(station.PendingBanter{
+		EventID: "evt_123",
+		NextSong: station.AgentSong{
+			Seed:   "SZA - Saturn",
+			Artist: "SZA",
+			Title:  "Saturn",
+		},
+	}); err != nil {
+		t.Fatalf("save pending banter: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: socketPath,
+		},
+		Station: config.StationConfig{
+			StateDir: stateDir,
+		},
+		TTS: config.TTSConfig{
+			DataDir: t.TempDir(),
+		},
+	}
+	ttsClient := &fakeSayTTSClient{}
+	restore := withSayTestHooks(cfg, ttsClient)
+	defer restore()
+
+	err := executeCommandForTest(t, "say", "hello")
+	if err != nil {
+		t.Fatalf("say failed: %v", err)
+	}
+	server.wait(t)
+
+	pending, err := store.LoadPendingBanter()
+	if err != nil {
+		t.Fatalf("load pending banter: %v", err)
+	}
+	if pending != nil {
+		data, _ := json.Marshal(pending)
+		t.Fatalf("pending banter should be cleared, got %s", string(data))
 	}
 }
 
