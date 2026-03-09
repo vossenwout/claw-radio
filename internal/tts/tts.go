@@ -16,6 +16,8 @@ import (
 
 var execCommand = exec.Command
 
+const chatterboxPostProcessGainDB = 8.0
+
 type Client struct {
 	cfg *config.Config
 }
@@ -24,24 +26,85 @@ func NewClient(cfg *config.Config) *Client {
 	return &Client{cfg: cfg}
 }
 
+func OutputExtension(cfg *config.Config) string {
+	if cfg == nil {
+		return ".wav"
+	}
+	if config.NormalizeTTSEngine(cfg.TTS.Engine) == config.TTSEngineChatterbox {
+		return ".wav"
+	}
+	if strings.EqualFold(filepath.Base(strings.TrimSpace(cfg.TTS.FallbackBinary)), "say") {
+		return ".aiff"
+	}
+	return ".wav"
+}
+
 func (c *Client) Render(text, voicePath, outPath string) error {
 	if c == nil || c.cfg == nil {
 		return fmt.Errorf("tts client config is nil")
 	}
 
+	switch config.NormalizeTTSEngine(c.cfg.TTS.Engine) {
+	case config.TTSEngineChatterbox:
+		return c.renderChatterbox(text, voicePath, outPath)
+	default:
+		return c.renderSystem(text, outPath)
+	}
+}
+
+func (c *Client) renderChatterbox(text, voicePath, outPath string) error {
 	if err := c.renderDaemon(text, voicePath, outPath); err == nil {
-		return nil
+		return c.postProcessChatterboxOutput(outPath)
 	} else if !isDaemonUnavailable(err) {
 		return err
 	}
 
 	if err := c.renderOneShot(text, voicePath, outPath); err == nil {
-		return nil
+		return c.postProcessChatterboxOutput(outPath)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
-	return c.renderSystem(text, outPath)
+	return fmt.Errorf("Chatterbox TTS not installed. Run: claw-radio tts install")
+}
+
+func (c *Client) postProcessChatterboxOutput(outPath string) error {
+	ffmpeg := strings.TrimSpace(c.cfg.FFmpeg.Binary)
+	if ffmpeg == "" {
+		return nil
+	}
+
+	ext := filepath.Ext(outPath)
+	base := strings.TrimSuffix(outPath, ext)
+	tempPath := base + ".post" + ext
+	args := []string{
+		"-y",
+		"-i", outPath,
+		"-af", chatterboxPostProcessFilter(),
+		tempPath,
+	}
+
+	cmd := execCommand(ffmpeg, args...)
+	combined, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(combined))
+		if msg == "" {
+			return fmt.Errorf("post-process chatterbox audio: %w", err)
+		}
+		return fmt.Errorf("post-process chatterbox audio: %w: %s", err, msg)
+	}
+
+	if err := os.Rename(tempPath, outPath); err != nil {
+		return fmt.Errorf("replace processed chatterbox audio: %w", err)
+	}
+	return nil
+}
+
+func chatterboxPostProcessFilter() string {
+	return fmt.Sprintf(
+		"acompressor=threshold=-20dB:ratio=2.5:attack=5:release=80:makeup=2,volume=%.1fdB,alimiter=limit=0.95",
+		chatterboxPostProcessGainDB,
+	)
 }
 
 type daemonRequest struct {

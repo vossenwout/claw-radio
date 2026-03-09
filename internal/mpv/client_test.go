@@ -168,6 +168,144 @@ func TestInsertNextSendsExpectedSequence(t *testing.T) {
 	}
 }
 
+func TestQueueNextUsesAppendPlayWhenIdle(t *testing.T) {
+	socketPath := makeSocketPath(t, "queuenext-idle")
+	received := make(chan [][]interface{}, 1)
+
+	ln := mustListenUnix(t, socketPath)
+	defer closeListener(t, ln)
+
+	go func() {
+		conn := mustAcceptUnix(t, ln)
+		defer conn.Close()
+
+		dec := json.NewDecoder(conn)
+		enc := json.NewEncoder(conn)
+		cmds := make([][]interface{}, 0, 2)
+
+		for i := 0; i < 2; i++ {
+			var req map[string]interface{}
+			if err := dec.Decode(&req); err != nil {
+				t.Errorf("Decode() error: %v", err)
+				return
+			}
+			reqID := req["request_id"]
+			cmd, ok := req["command"].([]interface{})
+			if !ok {
+				t.Errorf("request command is not array: %#v", req["command"])
+				return
+			}
+			cmds = append(cmds, cmd)
+
+			resp := map[string]interface{}{
+				"error":      "success",
+				"request_id": reqID,
+			}
+			if i == 0 {
+				resp["data"] = true
+			}
+
+			if err := enc.Encode(resp); err != nil {
+				t.Errorf("Encode() error: %v", err)
+				return
+			}
+		}
+		received <- cmds
+	}()
+
+	client, err := Dial(socketPath)
+	if err != nil {
+		t.Fatalf("Dial() error: %v", err)
+	}
+	defer client.Close()
+
+	if err := client.QueueNext("/tmp/song.mp3"); err != nil {
+		t.Fatalf("QueueNext() error: %v", err)
+	}
+
+	got := <-received
+	want := [][]interface{}{
+		{"get_property", "idle-active"},
+		{"loadfile", "/tmp/song.mp3", "append-play"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected command sequence:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestQueueNextFallsBackToInsertNextWhenActive(t *testing.T) {
+	socketPath := makeSocketPath(t, "queuenext-active")
+	received := make(chan [][]interface{}, 1)
+
+	ln := mustListenUnix(t, socketPath)
+	defer closeListener(t, ln)
+
+	go func() {
+		conn := mustAcceptUnix(t, ln)
+		defer conn.Close()
+
+		dec := json.NewDecoder(conn)
+		enc := json.NewEncoder(conn)
+		cmds := make([][]interface{}, 0, 5)
+
+		for i := 0; i < 5; i++ {
+			var req map[string]interface{}
+			if err := dec.Decode(&req); err != nil {
+				t.Errorf("Decode() error: %v", err)
+				return
+			}
+			reqID := req["request_id"]
+			cmd, ok := req["command"].([]interface{})
+			if !ok {
+				t.Errorf("request command is not array: %#v", req["command"])
+				return
+			}
+			cmds = append(cmds, cmd)
+
+			resp := map[string]interface{}{
+				"error":      "success",
+				"request_id": reqID,
+			}
+			switch i {
+			case 0:
+				resp["data"] = false
+			case 2:
+				resp["data"] = 1
+			case 3:
+				resp["data"] = 3
+			}
+
+			if err := enc.Encode(resp); err != nil {
+				t.Errorf("Encode() error: %v", err)
+				return
+			}
+		}
+		received <- cmds
+	}()
+
+	client, err := Dial(socketPath)
+	if err != nil {
+		t.Fatalf("Dial() error: %v", err)
+	}
+	defer client.Close()
+
+	if err := client.QueueNext("/tmp/song.mp3"); err != nil {
+		t.Fatalf("QueueNext() error: %v", err)
+	}
+
+	got := <-received
+	want := [][]interface{}{
+		{"get_property", "idle-active"},
+		{"loadfile", "/tmp/song.mp3", "append"},
+		{"get_property", "playlist-pos"},
+		{"get_property", "playlist-count"},
+		{"playlist-move", float64(2), float64(2)},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected command sequence:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestEventsContainsFileLoaded(t *testing.T) {
 	socketPath := makeSocketPath(t, "events")
 

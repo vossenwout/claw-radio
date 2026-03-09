@@ -222,6 +222,10 @@ func startupReadyTarget(cfg *config.Config) (int, bool, error) {
 	}
 	hasSongs := len(st.Seeds) > 0
 
+	if hasPendingIntro && !hasSongs {
+		return 0, false, nil
+	}
+
 	if !hasPendingIntro && !hasSongs {
 		return 0, false, nil
 	}

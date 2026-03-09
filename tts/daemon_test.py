@@ -75,6 +75,17 @@ import json
 import os
 
 
+class FakeTensor:
+    def __init__(self, values):
+        self.values = list(values)
+
+    def __mul__(self, scalar):
+        return FakeTensor([value * scalar for value in self.values])
+
+    def __len__(self):
+        return len(self.values)
+
+
 class ChatterboxTTS:
     def __init__(self, device="cpu"):
         self.device = device
@@ -93,7 +104,7 @@ class ChatterboxTTS:
                     "audio_prompt_path": audio_prompt_path,
                     "device": self.device,
                 }) + "\\n")
-        return b"fake-wave"
+        return FakeTensor([0.25, -0.25])
 """.strip()
             + "\n",
             encoding="utf-8",
@@ -117,6 +128,18 @@ class _Cuda:
         return False
 
 
+def clamp(wav_data, low, high):
+    values = []
+    for value in wav_data.values:
+        if value < low:
+            values.append(low)
+        elif value > high:
+            values.append(high)
+        else:
+            values.append(value)
+    return type(wav_data)(values)
+
+
 backends = _Backends()
 cuda = _Cuda()
 """.strip()
@@ -134,11 +157,12 @@ def save(path, wav_data, sample_rate):
     log_path = os.environ.get("FAKE_TORCHAUDIO_LOG")
     if log_path:
         with open(log_path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "path": path,
-                "sample_rate": sample_rate,
-                "size": len(wav_data) if hasattr(wav_data, "__len__") else 0,
-            }) + "\\n")
+                fh.write(json.dumps({
+                    "path": path,
+                    "sample_rate": sample_rate,
+                    "size": len(wav_data) if hasattr(wav_data, "__len__") else 0,
+                    "values": getattr(wav_data, "values", None),
+                }) + "\\n")
     with open(path, "wb") as out:
         out.write(b"RIFF")
         out.write(b"FAKE")
@@ -280,6 +304,12 @@ def save(path, wav_data, sample_rate):
         calls = _read_log(self.generate_log)
         self.assertEqual(len(calls), 1)
         self.assertIsNone(calls[0]["audio_prompt_path"])
+
+        saves = _read_log(self.save_log)
+        self.assertEqual(len(saves), 1)
+        self.assertEqual(saves[0]["sample_rate"], 24000)
+        self.assertAlmostEqual(saves[0]["values"][0], 0.25, places=6)
+        self.assertAlmostEqual(saves[0]["values"][1], -0.25, places=6)
 
     def test_one_shot_with_voice_uses_audio_prompt(self):
         out_path = self.tempdir / "oneshot-voice.wav"

@@ -123,6 +123,17 @@ func (c *Client) InsertNext(path string) error {
 	return nil
 }
 
+func (c *Client) QueueNext(path string) error {
+	idleRaw, err := c.Get("idle-active")
+	if err == nil {
+		idleActive, parseErr := parseBoolRaw(idleRaw)
+		if parseErr == nil && idleActive {
+			return c.LoadFile(path, "append-play")
+		}
+	}
+	return c.InsertNext(path)
+}
+
 func (c *Client) PlaylistCount() (int, error) {
 	raw, err := c.Get("playlist-count")
 	if err != nil {
@@ -333,6 +344,14 @@ func parseIntRaw(raw json.RawMessage) (int, error) {
 	}
 
 	return 0, fmt.Errorf("unsupported numeric value: %s", string(raw))
+}
+
+func parseBoolRaw(raw json.RawMessage) (bool, error) {
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return false, fmt.Errorf("unsupported bool value: %s", string(raw))
+	}
+	return b, nil
 }
 
 func mpvError(msg map[string]json.RawMessage) string {

@@ -42,7 +42,7 @@ func runPoll(cmd *cobra.Command, timeout time.Duration) error {
 
 	if !pidFileRunning(pidFilePath(mpvPIDFileName)) || !pidFileRunning(pidFilePath(controllerPIDFile)) {
 		event := station.AgentEvent{Event: "engine_stopped", TS: time.Now().Unix()}
-		data, err := json.Marshal(toPollCue(event))
+		data, err := marshalPollCue(toPollCue(event))
 		if err != nil {
 			return fmt.Errorf("marshal event: %w", err)
 		}
@@ -61,13 +61,14 @@ func runPoll(cmd *cobra.Command, timeout time.Duration) error {
 		snapshot := buildStatusSnapshot(cfg)
 		if snapshot.Engine == "running" && snapshot.Controller == "running" && snapshot.Playback != nil && snapshot.Playback.State == "buffering" {
 			cue = pollCue{
-				Event:  "buffering",
-				Prompt: "Radio is buffering upcoming songs. Poll again shortly.",
+				Event:   "buffering",
+				Prompt:  "The radio is still buffering the next audio. Poll again shortly.",
+				Command: pollCommand(timeout),
 			}
 		}
 	}
 
-	data, err := json.Marshal(cue)
+	data, err := marshalPollCue(cue)
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)
 	}
@@ -81,7 +82,7 @@ func toPollCue(event station.AgentEvent) pollCue {
 	switch event.Event {
 	case "banter_needed":
 		cue.Prompt = defaultPollPrompt(event.Prompt, "Say 1-2 short host sentences before the upcoming song.")
-		cue.CommandTemplate = `claw-radio say "<banter>"`
+		cue.CommandTemplate = `claw-radio say "YOUR_BANTER_HERE"`
 		if event.NextSong != nil {
 			artist := strings.TrimSpace(event.NextSong.Artist)
 			title := strings.TrimSpace(event.NextSong.Title)
@@ -94,7 +95,7 @@ func toPollCue(event station.AgentEvent) pollCue {
 			}
 		}
 	case "queue_low":
-		cue.Prompt = defaultPollPrompt(event.Prompt, "Add more songs to keep the queue healthy.")
+		cue.Prompt = defaultPollPrompt(event.Prompt, "Add more songs soon so the radio does not run dry.")
 		cue.CommandTemplate = `claw-radio playlist add '["Artist - Title", ...]'`
 		suggested := event.Depth - event.Count
 		if suggested <= 0 {
@@ -102,13 +103,31 @@ func toPollCue(event station.AgentEvent) pollCue {
 		}
 		cue.SuggestedAddCount = suggested
 	case "engine_stopped":
-		cue.Prompt = defaultPollPrompt(event.Prompt, "Restart playback.")
+		cue.Prompt = defaultPollPrompt(event.Prompt, "The radio is stopped. Start it again.")
 		cue.Command = "claw-radio start"
 	case "timeout":
 		cue.Prompt = defaultPollPrompt(event.Prompt, "No new cue yet. Poll again.")
+		cue.Command = pollCommand(pollTimeoutFlag)
 	}
 
 	return cue
+}
+
+func marshalPollCue(cue pollCue) ([]byte, error) {
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(cue); err != nil {
+		return nil, err
+	}
+	return []byte(strings.TrimSpace(buf.String())), nil
+}
+
+func pollCommand(timeout time.Duration) string {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	return "claw-radio poll --timeout " + timeout.String()
 }
 
 func defaultPollPrompt(raw, fallback string) string {

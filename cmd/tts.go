@@ -11,11 +11,14 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/vossenwout/claw-radio/internal/config"
 )
 
 const (
-	pythonMissingMessage = "python3 not found.\nInstall on macOS:  brew install python\nInstall on Linux:  apt install python3 python3-venv"
-	ffmpegMissingMessage = "ffmpeg not found.\nInstall on macOS:  brew install ffmpeg\nInstall on Linux:  apt install ffmpeg   (Debian/Ubuntu)\n                   dnf install ffmpeg   (Fedora)"
+	pythonMissingMessage      = "Python 3.11 not found.\nIf you use pyenv, switch first:  pyenv shell 3.11\nInstall on macOS:  brew install python@3.11\nInstall on Linux:  apt install python3.11 python3.11-venv"
+	ffmpegMissingMessage      = "ffmpeg not found.\nInstall on macOS:  brew install ffmpeg\nInstall on Linux:  apt install ffmpeg   (Debian/Ubuntu)\n                   dnf install ffmpeg   (Fedora)"
+	chatterboxPackageVersion  = "0.1.6"
+	ttsVoiceComingSoonMessage = "Custom TTS voices are planned, but disabled for v1 while voice-cloning support is finalized."
 )
 
 var (
@@ -29,6 +32,7 @@ var (
 	ttsMkdirAllFn    = os.MkdirAll
 	ttsRenameFn      = os.Rename
 	ttsRemoveFn      = os.Remove
+	ttsRemoveAllFn   = os.RemoveAll
 	ttsStatFn        = os.Stat
 
 	ttsVoiceNameFlag string
@@ -50,9 +54,23 @@ var ttsInstallCmd = &cobra.Command{
 	},
 }
 
+var ttsUseCmd = &cobra.Command{
+	Use:       "use <chatterbox|system>",
+	Short:     "Choose the active TTS engine",
+	Args:      cobra.ExactValidArgs(1),
+	ValidArgs: []string{config.TTSEngineChatterbox, config.TTSEngineSystem},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runTTSUse(cmd, args[0])
+	},
+}
+
 var ttsVoiceCmd = &cobra.Command{
 	Use:   "voice",
 	Short: "Manage saved voice samples",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runTTSVoiceComingSoon(cmd)
+	},
 }
 
 var ttsVoiceAddCmd = &cobra.Command{
@@ -60,7 +78,7 @@ var ttsVoiceAddCmd = &cobra.Command{
 	Short: "Save a new voice sample from a URL",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runTTSVoiceAdd(cmd, args[0])
+		return runTTSVoiceComingSoon(cmd)
 	},
 }
 
@@ -75,9 +93,9 @@ func runTTSInstall(cmd *cobra.Command) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	pythonPath, err := resolveRequiredBinary("", "python3")
+	pythonPath, err := resolveSupportedTTSPython()
 	if err != nil {
-		return exitCode(errors.New(pythonMissingMessage), 4)
+		return exitCode(err, 4)
 	}
 
 	if err := ttsMkdirAllFn(cfg.TTS.DataDir, 0o755); err != nil {
@@ -85,6 +103,9 @@ func runTTSInstall(cmd *cobra.Command) error {
 	}
 
 	venvDir := filepath.Join(cfg.TTS.DataDir, "venv")
+	if err := ttsRemoveAllFn(venvDir); err != nil {
+		return fmt.Errorf("remove existing python venv: %w", err)
+	}
 	if err := runTTSCommand(pythonPath, "-m", "venv", venvDir); err != nil {
 		return fmt.Errorf("create python venv: %w", err)
 	}
@@ -94,17 +115,39 @@ func runTTSInstall(cmd *cobra.Command) error {
 	}
 
 	pipPath := filepath.Join(venvDir, "bin", "pip")
-	if err := runTTSCommand(pipPath, "install", "chatterbox-tts", "torch", "torchaudio"); err != nil {
+	if err := runTTSCommand(pipPath, "install", chatterboxPackageSpec()); err != nil {
 		return fmt.Errorf("install python dependencies: %w", err)
+	}
+	if err := config.SetTTSEngine(config.TTSEngineChatterbox); err != nil {
+		return fmt.Errorf("activate chatterbox engine: %w", err)
 	}
 
 	venvPython := filepath.Join(venvDir, "bin", "python")
-	cudaAvailable, err := cudaAvailable(venvPython)
-	if err != nil || !cudaAvailable {
-		fmt.Fprintln(cmd.ErrOrStderr(), "CUDA not available - using CPU (slow on Linux VPS)")
+	device, err := detectTorchDevice(venvPython)
+	if err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Could not detect torch accelerator - defaulting to CPU until runtime proves otherwise")
+	} else if device == "cpu" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "No CUDA or MPS accelerator detected - using CPU (slow on Linux VPS)")
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "Chatterbox TTS installed. Use: claw-radio say \"<text>\"")
+	fmt.Fprintln(cmd.OutOrStdout(), "Chatterbox TTS installed and selected. Use: claw-radio say \"<text>\"")
+	return nil
+}
+
+func runTTSUse(cmd *cobra.Command, engine string) error {
+	parsed, ok := config.ParseTTSEngine(engine)
+	if !ok {
+		return fmt.Errorf("invalid tts engine %q", engine)
+	}
+	if err := config.SetTTSEngine(parsed); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "TTS engine set to %s\n", parsed)
+	return nil
+}
+
+func runTTSVoiceComingSoon(cmd *cobra.Command) error {
+	fmt.Fprintln(cmd.OutOrStdout(), ttsVoiceComingSoonMessage)
 	return nil
 }
 
@@ -177,6 +220,59 @@ func resolveRequiredBinary(configuredPath, fallbackName string) (string, error) 
 		return "", errors.New("binary path empty")
 	}
 	return path, nil
+}
+
+func resolveSupportedTTSPython() (string, error) {
+	candidates := []string{"python3.11", "python3"}
+	seen := make(map[string]struct{}, len(candidates))
+	unsupported := make([]string, 0)
+
+	for _, candidate := range candidates {
+		path, err := ttsLookPathFn(candidate)
+		if err != nil || strings.TrimSpace(path) == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+
+		version, err := readPythonVersion(path)
+		if err != nil {
+			unsupported = append(unsupported, fmt.Sprintf("%s (version check failed)", path))
+			continue
+		}
+		if isSupportedTTSPython(version) {
+			return path, nil
+		}
+		unsupported = append(unsupported, fmt.Sprintf("%s (%s)", path, version))
+	}
+
+	if len(unsupported) == 0 {
+		return "", errors.New(pythonMissingMessage)
+	}
+
+	return "", fmt.Errorf(
+		"custom TTS requires Python 3.11 for %s. Found unsupported interpreters: %s.\nIf you use pyenv, switch first:  pyenv shell 3.11\nInstall on macOS:  brew install python@3.11\nInstall on Linux:  apt install python3.11 python3.11-venv",
+		chatterboxPackageSpec(),
+		strings.Join(unsupported, ", "),
+	)
+}
+
+func readPythonVersion(pythonPath string) (string, error) {
+	out, err := runTTSCommandWithOutput(pythonPath, "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}')")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func isSupportedTTSPython(version string) bool {
+	return strings.HasPrefix(strings.TrimSpace(version), "3.11.")
+}
+
+func chatterboxPackageSpec() string {
+	return "chatterbox-tts==" + chatterboxPackageVersion
 }
 
 func runTTSCommand(command string, args ...string) error {
@@ -272,17 +368,24 @@ func replaceFile(src, dst string) error {
 	return ttsRenameFn(src, dst)
 }
 
-func cudaAvailable(pythonPath string) (bool, error) {
-	out, err := runTTSCommandWithOutput(pythonPath, "-c", "import torch; print('1' if torch.cuda.is_available() else '0')")
+func detectTorchDevice(pythonPath string) (string, error) {
+	out, err := runTTSCommandWithOutput(pythonPath, "-c", "import torch; print('mps' if torch.backends.mps.is_available() else ('cuda' if torch.cuda.is_available() else 'cpu'))")
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return strings.TrimSpace(string(out)) == "1", nil
+	device := strings.TrimSpace(string(out))
+	switch device {
+	case "mps", "cuda", "cpu":
+		return device, nil
+	default:
+		return "", fmt.Errorf("unexpected torch device %q", device)
+	}
 }
 
 func init() {
 	ttsVoiceAddCmd.Flags().StringVar(&ttsVoiceNameFlag, "name", "", "Voice profile name")
 
+	ttsCmd.AddCommand(ttsUseCmd)
 	ttsVoiceCmd.AddCommand(ttsVoiceAddCmd)
 	ttsCmd.AddCommand(ttsInstallCmd)
 	ttsCmd.AddCommand(ttsVoiceCmd)

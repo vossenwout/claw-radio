@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vossenwout/claw-radio/internal/config"
+	"github.com/vossenwout/claw-radio/internal/station"
 )
 
 func TestStatusJSONReportsStoppedEngineWithoutError(t *testing.T) {
@@ -39,6 +40,53 @@ func TestStatusJSONReportsStoppedEngineWithoutError(t *testing.T) {
 	out := decodeStatusJSONForTest(t, stdout)
 	if out.Engine != "stopped" {
 		t.Fatalf("engine = %q, want %q", out.Engine, "stopped")
+	}
+}
+
+func TestStatusJSONShowsPendingIntroBanterWhenStopped(t *testing.T) {
+	tmp := t.TempDir()
+	stateDir := filepath.Join(tmp, "state")
+	banterDir := filepath.Join(tmp, "tts", "banter")
+	if err := os.MkdirAll(banterDir, 0o755); err != nil {
+		t.Fatalf("mkdir banter dir: %v", err)
+	}
+	banterPath := filepath.Join(banterDir, "intro.aiff")
+	if err := os.WriteFile(banterPath+".meta.json", mustRawJSON(t, map[string]string{"text": "mac miller is the goat"}), 0o644); err != nil {
+		t.Fatalf("write banter sidecar: %v", err)
+	}
+	store := station.NewAgentEventStore(stateDir)
+	if err := store.SavePendingIntro(banterPath); err != nil {
+		t.Fatalf("save pending intro: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: filepath.Join(tmp, "missing.sock"),
+		},
+		Station: config.StationConfig{
+			StateDir:   stateDir,
+			QueueDepth: 5,
+		},
+		TTS: config.TTSConfig{
+			DataDir: filepath.Join(tmp, "tts"),
+			Socket:  filepath.Join(tmp, "missing-tts.sock"),
+		},
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, nil, nil, nil)
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Engine != "stopped" {
+		t.Fatalf("engine = %q, want stopped", out.Engine)
+	}
+	if out.Banter != "mac miller is the goat" {
+		t.Fatalf("banter = %q, want pending intro text", out.Banter)
 	}
 }
 
@@ -238,7 +286,60 @@ func TestStatusJSONExcludesQueuedBanterFromUpcomingAndShowsPreview(t *testing.T)
 	}
 }
 
-func TestStatusJSONReportsTotalUpcomingAndPreparingSongs(t *testing.T) {
+func TestStatusJSONClearsHistoricalBanterWhenIdleAndQueueEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	banterDir := filepath.Join(tmp, "tts", "banter")
+	if err := os.MkdirAll(banterDir, 0o755); err != nil {
+		t.Fatalf("mkdir banter dir: %v", err)
+	}
+	banterPath := filepath.Join(banterDir, "intro.aiff")
+	if err := os.WriteFile(banterPath+".meta.json", mustRawJSON(t, map[string]string{"text": "hello gangsters"}), 0o644); err != nil {
+		t.Fatalf("write banter sidecar: %v", err)
+	}
+
+	cfg := &config.Config{
+		MPV:     config.MPVConfig{Socket: filepath.Join(tmp, "mock.sock")},
+		Station: config.StationConfig{StateDir: filepath.Join(tmp, "state"), QueueDepth: 5},
+		TTS:     config.TTSConfig{DataDir: filepath.Join(tmp, "tts"), Socket: filepath.Join(tmp, "missing-tts.sock")},
+	}
+
+	writePIDForTest(t, filepath.Join(tmp, mpvPIDFileName), 116)
+
+	playlist := mustRawJSON(t, []map[string]interface{}{{"filename": banterPath}})
+	client := &fakeStatusMPVClient{
+		props: map[string]json.RawMessage{
+			"pause":       mustRawJSON(t, false),
+			"path":        mustRawJSON(t, ""),
+			"media-title": mustRawJSON(t, ""),
+			"time-pos":    mustRawJSON(t, 0),
+			"duration":    mustRawJSON(t, 0),
+			"volume":      mustRawJSON(t, 100),
+			"playlist":    playlist,
+		},
+		playlistCount: 1,
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, client, nil, func(pid int) bool { return pid == 116 })
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.Playback == nil || out.Playback.State != "idle" {
+		t.Fatalf("playback = %#v, want idle", out.Playback)
+	}
+	if out.Queue.Upcoming != 0 || out.Queue.Preparing != 0 {
+		t.Fatalf("queue = %#v, want empty queue", out.Queue)
+	}
+	if out.Banter != "" {
+		t.Fatalf("banter = %q, want empty after historical intro finished", out.Banter)
+	}
+}
+
+func TestStatusJSONSeparatesReadyAndPreparingSongs(t *testing.T) {
 	tmp := t.TempDir()
 	stateDir := filepath.Join(tmp, "state")
 	cacheDir := filepath.Join(tmp, "cache")
@@ -307,8 +408,8 @@ func TestStatusJSONReportsTotalUpcomingAndPreparingSongs(t *testing.T) {
 	}
 
 	out := decodeStatusJSONForTest(t, stdout)
-	if out.Queue.Upcoming != 2 {
-		t.Fatalf("queue.upcoming = %d, want 2", out.Queue.Upcoming)
+	if out.Queue.Upcoming != 1 {
+		t.Fatalf("queue.upcoming = %d, want 1", out.Queue.Upcoming)
 	}
 	if out.Queue.Preparing != 1 {
 		t.Fatalf("queue.preparing = %d, want 1", out.Queue.Preparing)
@@ -364,8 +465,8 @@ func TestStatusJSONShowsBufferingWhenIdleWithPendingPlaylistSeeds(t *testing.T) 
 	if out.Queue.Preparing != 1 {
 		t.Fatalf("queue.preparing = %d, want 1", out.Queue.Preparing)
 	}
-	if out.Warning != "having trouble preparing the next song" {
-		t.Fatalf("warning = %q, want %q", out.Warning, "having trouble preparing the next song")
+	if out.Warning != "" {
+		t.Fatalf("warning = %q, want empty", out.Warning)
 	}
 }
 
@@ -613,6 +714,16 @@ func TestStatusJSONReportsWarmTTSWhenSocketResponds(t *testing.T) {
 	socketPath := makePlaybackSocketPath(t, "status-tts-warm")
 	stopWarm := startWarmSocketForTest(t, socketPath)
 	defer stopWarm()
+	dataDir := filepath.Join(tmp, "tts")
+	if err := os.MkdirAll(filepath.Join(dataDir, "venv", "bin"), 0o755); err != nil {
+		t.Fatalf("mkdir venv dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "venv", "bin", "python"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write python shim: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "daemon.py"), []byte("print('ok')\n"), 0o644); err != nil {
+		t.Fatalf("write daemon shim: %v", err)
+	}
 
 	cfg := &config.Config{
 		Station: config.StationConfig{
@@ -620,7 +731,9 @@ func TestStatusJSONReportsWarmTTSWhenSocketResponds(t *testing.T) {
 			QueueDepth: 5,
 		},
 		TTS: config.TTSConfig{
-			Socket: socketPath,
+			Engine:  config.TTSEngineChatterbox,
+			DataDir: dataDir,
+			Socket:  socketPath,
 		},
 	}
 
@@ -633,8 +746,47 @@ func TestStatusJSONReportsWarmTTSWhenSocketResponds(t *testing.T) {
 	}
 
 	out := decodeStatusJSONForTest(t, stdout)
-	if out.TTS != "warm" {
-		t.Fatalf("tts = %q, want %q", out.TTS, "warm")
+	if out.TTS != "chatterbox (warm)" {
+		t.Fatalf("tts = %q, want %q", out.TTS, "chatterbox (warm)")
+	}
+}
+
+func TestStatusJSONReportsChatterboxWhenConfiguredButDaemonCold(t *testing.T) {
+	tmp := t.TempDir()
+	dataDir := filepath.Join(tmp, "tts")
+	if err := os.MkdirAll(filepath.Join(dataDir, "venv", "bin"), 0o755); err != nil {
+		t.Fatalf("mkdir venv dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "venv", "bin", "python"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write python shim: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "daemon.py"), []byte("print('ok')\n"), 0o644); err != nil {
+		t.Fatalf("write daemon shim: %v", err)
+	}
+
+	cfg := &config.Config{
+		Station: config.StationConfig{
+			StateDir:   filepath.Join(tmp, "state"),
+			QueueDepth: 5,
+		},
+		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
+			DataDir: dataDir,
+			Socket:  filepath.Join(tmp, "missing.sock"),
+		},
+	}
+
+	restore := withStatusTestHooks(cfg, tmp, nil, nil, nil)
+	defer restore()
+
+	err, stdout, _ := executeCommandWithOutputForTest("status", "--json")
+	if err != nil {
+		t.Fatalf("status --json failed: %v", err)
+	}
+
+	out := decodeStatusJSONForTest(t, stdout)
+	if out.TTS != "chatterbox" {
+		t.Fatalf("tts = %q, want %q", out.TTS, "chatterbox")
 	}
 }
 
@@ -731,7 +883,7 @@ func TestStatusJSONMatchesSchema(t *testing.T) {
 	}
 
 	out := decodeStatusJSONForTest(t, stdout)
-	if out.Engine != "running" || out.Controller != "running" || out.TTS != "warm" {
+	if out.Engine != "running" || out.Controller != "running" || out.TTS != "system" {
 		t.Fatalf("unexpected top-level values: %#v", out)
 	}
 	if out.Queue.Upcoming != 3 || out.Queue.Preparing != 48 {

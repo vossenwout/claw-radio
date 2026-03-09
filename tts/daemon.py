@@ -53,7 +53,9 @@ def _extract_wav_data(wav: Any) -> Any:
     return wav
 
 
-def synthesize_to_path(model: Any, text: str, out_path: str, voice_prompt: Optional[str] = None) -> None:
+def synthesize_to_path(
+    model: Any, text: str, out_path: str, voice_prompt: Optional[str] = None
+) -> None:
     kwargs = {}
     if voice_prompt:
         kwargs["audio_prompt_path"] = voice_prompt
@@ -191,7 +193,9 @@ def run_one_shot(text: str, out_path: str, voice_prompt: Optional[str]) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     if "--one-shot" in argv:
         parser = argparse.ArgumentParser(description="claw-radio chatterbox one-shot")
-        parser.add_argument("--one-shot", action="store_true", help="render once and exit")
+        parser.add_argument(
+            "--one-shot", action="store_true", help="render once and exit"
+        )
         parser.add_argument("text", help="text to render")
         parser.add_argument("out_path", help="output wav path")
         parser.add_argument("--voice", default=None, help="voice prompt wav path")

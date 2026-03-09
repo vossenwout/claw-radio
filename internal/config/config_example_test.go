@@ -19,6 +19,7 @@ type configExampleFile struct {
 		Binary string `json:"binary"`
 	} `json:"ffmpeg"`
 	TTS struct {
+		Engine         string `json:"engine"`
 		FallbackBinary string `json:"fallback_binary"`
 	} `json:"tts"`
 	Station struct {
@@ -97,6 +98,9 @@ func TestConfigExampleContainsExpectedKeysAndDefaults(t *testing.T) {
 	}
 	if cfg.FFmpeg.Binary != "" {
 		t.Fatalf("expected ffmpeg.binary to be empty string, got %q", cfg.FFmpeg.Binary)
+	}
+	if cfg.TTS.Engine != TTSEngineSystem {
+		t.Fatalf("expected tts.engine to be %q, got %q", TTSEngineSystem, cfg.TTS.Engine)
 	}
 	if cfg.TTS.FallbackBinary != "" {
 		t.Fatalf("expected tts.fallback_binary to be empty string, got %q", cfg.TTS.FallbackBinary)

@@ -40,6 +40,9 @@ func TestPollReturnsTimeoutEvent(t *testing.T) {
 	if event["prompt"] != "No new cue yet. Poll again." {
 		t.Fatalf("prompt = %v, want wait prompt", event["prompt"])
 	}
+	if event["command"] != "claw-radio poll --timeout 30ms" {
+		t.Fatalf("command = %v, want literal poll command", event["command"])
+	}
 }
 
 func TestPollReturnsBufferingCueWhenRadioBuffering(t *testing.T) {
@@ -91,8 +94,11 @@ func TestPollReturnsBufferingCueWhenRadioBuffering(t *testing.T) {
 	if event["event"] != "buffering" {
 		t.Fatalf("event = %v, want buffering", event["event"])
 	}
-	if event["prompt"] != "Radio is buffering upcoming songs. Poll again shortly." {
+	if event["prompt"] != "The radio is still buffering the next audio. Poll again shortly." {
 		t.Fatalf("prompt = %v, want buffering prompt", event["prompt"])
+	}
+	if event["command"] != "claw-radio poll --timeout 30ms" {
+		t.Fatalf("command = %v, want literal poll command", event["command"])
 	}
 }
 
@@ -172,7 +178,7 @@ func TestPollReturnsBanterNeededJSONPayload(t *testing.T) {
 	if out["upcoming_song"] != "SZA - Saturn" {
 		t.Fatalf("upcoming_song = %v, want SZA - Saturn", out["upcoming_song"])
 	}
-	if out["command_template"] != `claw-radio say "<banter>"` {
+	if out["command_template"] != `claw-radio say "YOUR_BANTER_HERE"` {
 		t.Fatalf("command_template = %v, want say template", out["command_template"])
 	}
 }

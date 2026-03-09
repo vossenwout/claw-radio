@@ -116,6 +116,7 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 
 	queueSeeds := loadStatusSeeds(cfg.Station.StateDir)
 	snapshot.Queue.Preparing = len(queueSeeds)
+	snapshot.Banter = readPendingIntroBanter(cfg)
 
 	if pidFileRunning(pidFilePath(mpvPIDFileName)) {
 		snapshot.Engine = "running"
@@ -135,18 +136,15 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 	defer client.Close()
 
 	snapshot.Playback = readPlaybackStatus(client)
-	readyCount := 0
 	currentPath, _ := readStringProperty(client, "path")
 	if overview, ok := readPlaylistOverview(cfg, client); ok {
 		snapshot.Banter = overview.Banter
 		queueSnapshot := station.BuildPlaylistSnapshot(cfg, queueSeeds, currentPath, overview.RemainingPaths)
 		if len(queueSeeds) > 0 || len(queueSnapshot.Songs) > 0 {
-			snapshot.Queue.Upcoming = len(queueSnapshot.Songs)
+			snapshot.Queue.Upcoming = queueSnapshot.Ready
 			snapshot.Queue.Preparing = queueSnapshot.Preparing
-			readyCount = queueSnapshot.Ready
 		} else {
 			snapshot.Queue.Upcoming = overview.UpcomingSongs
-			readyCount = overview.UpcomingSongs
 		}
 	} else if count, err := client.PlaylistCount(); err == nil {
 		upcoming := count
@@ -154,15 +152,13 @@ func buildStatusSnapshot(cfg *config.Config) statusSnapshot {
 			upcoming--
 		}
 		snapshot.Queue.Upcoming = upcoming
-		readyCount = upcoming
 	}
 	if snapshot.Playback != nil && snapshot.Playback.State == "idle" && (snapshot.Queue.Upcoming > 0 || snapshot.Queue.Preparing > 0) {
 		snapshot.Playback.State = "buffering"
 	}
-	if snapshot.Queue.Preparing > 0 && readyCount == 0 && snapshot.Playback != nil && snapshot.Playback.State == "buffering" {
-		snapshot.Warning = "having trouble preparing the next song"
+	if snapshot.Playback != nil && snapshot.Playback.State == "idle" && snapshot.Queue.Upcoming == 0 && snapshot.Queue.Preparing == 0 {
+		snapshot.Banter = ""
 	}
-
 	return snapshot
 }
 
@@ -207,6 +203,21 @@ func loadStatusSeeds(stateDir string) []string {
 		return nil
 	}
 	return append([]string(nil), st.Seeds...)
+}
+
+func readPendingIntroBanter(cfg *config.Config) string {
+	if cfg == nil || strings.TrimSpace(cfg.Station.StateDir) == "" {
+		return ""
+	}
+	pending, err := station.NewAgentEventStore(cfg.Station.StateDir).LoadPendingIntro()
+	if err != nil || pending == nil {
+		return ""
+	}
+	audioPath := strings.TrimSpace(pending.AudioPath)
+	if audioPath == "" {
+		return ""
+	}
+	return readStatusBanterText(audioPath)
 }
 
 func readPlaybackStatus(client statusMPVClient) *statusPlayback {
@@ -377,13 +388,40 @@ func detectTTSStatus(cfg *config.Config) string {
 	if cfg == nil {
 		return "unavailable"
 	}
-	if ttsSocketResponsive(cfg.TTS.Socket) {
-		return "warm"
-	}
-	if strings.TrimSpace(cfg.TTS.FallbackBinary) != "" {
+	switch config.NormalizeTTSEngine(cfg.TTS.Engine) {
+	case config.TTSEngineChatterbox:
+		if ttsSocketResponsive(cfg.TTS.Socket) {
+			return "chatterbox (warm)"
+		}
+		if pidFileRunning(pidFilePath(ttsPIDFileName)) {
+			return "chatterbox (starting)"
+		}
+		if chatterboxInstalled(cfg) {
+			return "chatterbox"
+		}
+		return "chatterbox (not installed)"
+	default:
 		return "system"
 	}
-	return "unavailable"
+}
+
+func chatterboxInstalled(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	dataDir := strings.TrimSpace(cfg.TTS.DataDir)
+	if dataDir == "" {
+		return false
+	}
+	pythonPath := filepath.Join(dataDir, "venv", "bin", "python")
+	if _, err := os.Stat(pythonPath); err != nil {
+		return false
+	}
+	daemonPath := filepath.Join(dataDir, "daemon.py")
+	if _, err := os.Stat(daemonPath); err != nil {
+		return false
+	}
+	return true
 }
 
 func ttsSocketResponsive(socketPath string) bool {

@@ -81,6 +81,7 @@ func isUsageError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "unknown command") ||
 		strings.Contains(msg, "unknown flag") ||
+		strings.Contains(msg, "invalid argument") ||
 		strings.Contains(msg, "requires at least") ||
 		strings.Contains(msg, "accepts ") ||
 		strings.Contains(msg, "required flag")

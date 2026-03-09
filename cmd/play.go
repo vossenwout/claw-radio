@@ -10,7 +10,7 @@ const mpvNotRunningMessage = "radio is not running. Start with: claw-radio start
 
 type playbackClient interface {
 	Close() error
-	InsertNext(path string) error
+	QueueNext(path string) error
 }
 
 var dialPlaybackClientFn = func(socketPath string) (playbackClient, error) {

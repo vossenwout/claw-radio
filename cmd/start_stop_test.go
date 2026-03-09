@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/vossenwout/claw-radio/internal/config"
+	"github.com/vossenwout/claw-radio/internal/station"
 )
 
 func TestStartFailsWhenMPVMissing(t *testing.T) {
@@ -387,4 +388,24 @@ func spawnSleepProcess(t *testing.T) *os.Process {
 		_, _ = cmd.Process.Wait()
 	})
 	return cmd.Process
+}
+
+func TestStartupReadyTargetSkipsWaitForIntroOnlyStart(t *testing.T) {
+	stateDir := t.TempDir()
+	store := station.NewAgentEventStore(stateDir)
+	if err := store.SavePendingIntro(filepath.Join(stateDir, "intro.aiff")); err != nil {
+		t.Fatalf("save pending intro: %v", err)
+	}
+
+	cfg := &config.Config{Station: config.StationConfig{StateDir: stateDir}}
+	target, shouldWait, err := startupReadyTarget(cfg)
+	if err != nil {
+		t.Fatalf("startupReadyTarget failed: %v", err)
+	}
+	if target != 0 {
+		t.Fatalf("target = %d, want 0", target)
+	}
+	if shouldWait {
+		t.Fatal("shouldWait = true, want false for intro-only startup")
+	}
 }

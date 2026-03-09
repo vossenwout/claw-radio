@@ -14,8 +14,9 @@ import (
 )
 
 type playbackMPVServer struct {
-	listener *net.UnixListener
-	path     string
+	listener   *net.UnixListener
+	path       string
+	idleActive bool
 
 	mu   sync.Mutex
 	cmds [][]interface{}
@@ -25,6 +26,10 @@ type playbackMPVServer struct {
 }
 
 func startPlaybackMPVServer(t *testing.T, socketPath string) *playbackMPVServer {
+	return startPlaybackMPVServerWithIdleState(t, socketPath, false)
+}
+
+func startPlaybackMPVServerWithIdleState(t *testing.T, socketPath string, idleActive bool) *playbackMPVServer {
 	t.Helper()
 
 	addr := &net.UnixAddr{Name: socketPath, Net: "unix"}
@@ -34,10 +39,11 @@ func startPlaybackMPVServer(t *testing.T, socketPath string) *playbackMPVServer 
 	}
 
 	server := &playbackMPVServer{
-		listener: ln,
-		path:     socketPath,
-		done:     make(chan struct{}),
-		err:      make(chan error, 1),
+		listener:   ln,
+		path:       socketPath,
+		idleActive: idleActive,
+		done:       make(chan struct{}),
+		err:        make(chan error, 1),
 	}
 
 	go server.serve()
@@ -91,6 +97,8 @@ func (s *playbackMPVServer) serve() {
 				resp["data"] = 0
 			} else if prop == "playlist-count" {
 				resp["data"] = 2
+			} else if prop == "idle-active" {
+				resp["data"] = s.idleActive
 			}
 		}
 		if err := enc(resp); err != nil {

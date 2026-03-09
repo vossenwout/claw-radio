@@ -48,10 +48,7 @@ func runSay(cmd *cobra.Command, text string) error {
 	if err := mkdirAllFn(banterDir, 0o755); err != nil {
 		return fmt.Errorf("create banter dir: %w", err)
 	}
-	ext := ".wav"
-	if strings.EqualFold(filepath.Base(strings.TrimSpace(cfg.TTS.FallbackBinary)), "say") {
-		ext = ".aiff"
-	}
+	ext := tts.OutputExtension(cfg)
 	outPath := filepath.Join(banterDir, fmt.Sprintf("%d%s", nowUnixNanoFn(), ext))
 
 	if err := newSayTTSClientFn(cfg).Render(text, "", outPath); err != nil {
@@ -65,7 +62,7 @@ func runSay(cmd *cobra.Command, text string) error {
 	mpvClient, err := dialPlaybackClient(cfg.MPV.Socket)
 	if err == nil {
 		defer mpvClient.Close()
-		if err := mpvClient.InsertNext(outPath); err != nil {
+		if err := mpvClient.QueueNext(outPath); err != nil {
 			return fmt.Errorf("queue banter: %w", err)
 		}
 		_ = store.ClearPendingBanter()

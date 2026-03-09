@@ -29,6 +29,7 @@ func TestRenderWarmDaemonReturnsNilWithoutFallback(t *testing.T) {
 
 	client := NewClient(&config.Config{
 		TTS: config.TTSConfig{
+			Engine:         config.TTSEngineChatterbox,
 			Socket:         socketPath,
 			DataDir:        dataDir,
 			FallbackBinary: "espeak-ng",
@@ -52,18 +53,14 @@ func TestRenderFallsBackToOneShotWhenDaemonConnectionRefusedAndVenvPresent(t *te
 	dataDir := t.TempDir()
 	pythonPath := ensureVenvPython(t, dataDir)
 	outPath := filepath.Join(t.TempDir(), "speech.wav")
+	t.Setenv("TTS_HELPER_LOG", filepath.Join(t.TempDir(), "tts-helper.log"))
 
-	t.Setenv("TTS_HELPER_EXPECT_CMD", pythonPath)
-	t.Setenv("TTS_HELPER_EXPECT_ARGS", strings.Join([]string{
-		filepath.Join(dataDir, "daemon.py"),
-		"--one-shot",
-		"hello one-shot",
-		outPath,
-	}, "\x1f"))
 	t.Setenv("TTS_HELPER_EXIT", "0")
 
 	client := NewClient(&config.Config{
+		FFmpeg: config.BinaryConfig{Binary: "ffmpeg"},
 		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
 			Socket:  socketPath,
 			DataDir: dataDir,
 		},
@@ -71,6 +68,18 @@ func TestRenderFallsBackToOneShotWhenDaemonConnectionRefusedAndVenvPresent(t *te
 
 	if err := client.Render("hello one-shot", "", outPath); err != nil {
 		t.Fatalf("Render() error: %v", err)
+	}
+
+	logData, err := os.ReadFile(os.Getenv("TTS_HELPER_LOG"))
+	if err != nil {
+		t.Fatalf("ReadFile(helper log) error: %v", err)
+	}
+	log := string(logData)
+	if !strings.Contains(log, pythonPath+" "+filepath.Join(dataDir, "daemon.py")+" --one-shot hello one-shot "+outPath) {
+		t.Fatalf("helper log missing one-shot call: %q", log)
+	}
+	if !strings.Contains(log, "ffmpeg -y -i "+outPath+" -af "+chatterboxPostProcessFilter()+" "+filepath.Join(filepath.Dir(outPath), "speech.post.wav")) {
+		t.Fatalf("helper log missing ffmpeg post-process call: %q", log)
 	}
 }
 
@@ -91,6 +100,7 @@ func TestRenderFallsBackToSystemTTSWhenNoVenv(t *testing.T) {
 
 	client := NewClient(&config.Config{
 		TTS: config.TTSConfig{
+			Engine:         config.TTSEngineSystem,
 			Socket:         socketPath,
 			DataDir:        dataDir,
 			FallbackBinary: "espeak-ng",
@@ -108,6 +118,7 @@ func TestRenderReturnsHelpfulErrorWhenNoFallbackBinary(t *testing.T) {
 
 	client := NewClient(&config.Config{
 		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
 			Socket:  socketPath,
 			DataDir: dataDir,
 		},
@@ -117,8 +128,43 @@ func TestRenderReturnsHelpfulErrorWhenNoFallbackBinary(t *testing.T) {
 	if err == nil {
 		t.Fatal("Render() expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "No TTS binary found") {
-		t.Fatalf("Render() error = %q, want contains %q", err.Error(), "No TTS binary found")
+	if !strings.Contains(err.Error(), "Chatterbox TTS not installed") {
+		t.Fatalf("Render() error = %q, want contains %q", err.Error(), "Chatterbox TTS not installed")
+	}
+}
+
+func TestRenderChatterboxSkipsPostProcessWhenFFmpegMissing(t *testing.T) {
+	setMockExecCommand(t)
+
+	socketPath := makeRefusedSocketPath(t, "oneshot-no-ffmpeg")
+	dataDir := t.TempDir()
+	pythonPath := ensureVenvPython(t, dataDir)
+	outPath := filepath.Join(t.TempDir(), "speech.wav")
+	t.Setenv("TTS_HELPER_LOG", filepath.Join(t.TempDir(), "tts-helper.log"))
+	t.Setenv("TTS_HELPER_EXIT", "0")
+
+	client := NewClient(&config.Config{
+		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
+			Socket:  socketPath,
+			DataDir: dataDir,
+		},
+	})
+
+	if err := client.Render("hello one-shot", "", outPath); err != nil {
+		t.Fatalf("Render() error: %v", err)
+	}
+
+	logData, err := os.ReadFile(os.Getenv("TTS_HELPER_LOG"))
+	if err != nil {
+		t.Fatalf("ReadFile(helper log) error: %v", err)
+	}
+	log := string(logData)
+	if !strings.Contains(log, pythonPath+" "+filepath.Join(dataDir, "daemon.py")+" --one-shot hello one-shot "+outPath) {
+		t.Fatalf("helper log missing one-shot call: %q", log)
+	}
+	if strings.Contains(log, "ffmpeg ") {
+		t.Fatalf("helper log should not include ffmpeg when binary missing: %q", log)
 	}
 }
 
@@ -128,6 +174,7 @@ func TestRenderWarmDaemonIncludesVoicePromptWhenProvided(t *testing.T) {
 
 	client := NewClient(&config.Config{
 		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
 			Socket:  socketPath,
 			DataDir: t.TempDir(),
 		},
@@ -154,6 +201,7 @@ func TestRenderWarmDaemonOmitsVoicePromptWhenEmpty(t *testing.T) {
 
 	client := NewClient(&config.Config{
 		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
 			Socket:  socketPath,
 			DataDir: t.TempDir(),
 		},
@@ -166,6 +214,20 @@ func TestRenderWarmDaemonOmitsVoicePromptWhenEmpty(t *testing.T) {
 	req := <-requests
 	if _, ok := req["voice_prompt"]; ok {
 		t.Fatalf("request unexpectedly includes voice_prompt: %#v", req["voice_prompt"])
+	}
+}
+
+func TestOutputExtensionUsesWAVForChatterbox(t *testing.T) {
+	got := OutputExtension(&config.Config{TTS: config.TTSConfig{Engine: config.TTSEngineChatterbox, FallbackBinary: "say"}})
+	if got != ".wav" {
+		t.Fatalf("OutputExtension() = %q, want %q", got, ".wav")
+	}
+}
+
+func TestOutputExtensionUsesAIFFForSystemSay(t *testing.T) {
+	got := OutputExtension(&config.Config{TTS: config.TTSConfig{Engine: config.TTSEngineSystem, FallbackBinary: "/usr/bin/say"}})
+	if got != ".aiff" {
+		t.Fatalf("OutputExtension() = %q, want %q", got, ".aiff")
 	}
 }
 
@@ -183,6 +245,7 @@ func setMockExecCommand(t *testing.T) {
 	t.Setenv("TTS_HELPER_EXIT", "0")
 	t.Setenv("TTS_HELPER_STDOUT", "")
 	t.Setenv("TTS_HELPER_STDERR", "")
+	t.Setenv("TTS_HELPER_LOG", "")
 }
 
 func helperCommand(command string, args ...string) *exec.Cmd {
@@ -213,6 +276,7 @@ func TestTTSHelperProcess(t *testing.T) {
 
 	gotCmd := args[sep+1]
 	gotArgs := args[sep+2:]
+	appendHelperLog(gotCmd, gotArgs)
 
 	if wantCmd := os.Getenv("TTS_HELPER_EXPECT_CMD"); wantCmd != "" && gotCmd != wantCmd {
 		fmt.Fprintf(os.Stderr, "unexpected command: got %q want %q", gotCmd, wantCmd)
@@ -230,6 +294,14 @@ func TestTTSHelperProcess(t *testing.T) {
 	fmt.Fprint(os.Stdout, os.Getenv("TTS_HELPER_STDOUT"))
 	fmt.Fprint(os.Stderr, os.Getenv("TTS_HELPER_STDERR"))
 
+	if filepath.Base(gotCmd) == "ffmpeg" {
+		outPath := gotArgs[len(gotArgs)-1]
+		if err := os.WriteFile(outPath, []byte("processed"), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "write ffmpeg output: %v", err)
+			os.Exit(6)
+		}
+	}
+
 	code := 0
 	if raw := os.Getenv("TTS_HELPER_EXIT"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -240,6 +312,23 @@ func TestTTSHelperProcess(t *testing.T) {
 		code = parsed
 	}
 	os.Exit(code)
+}
+
+func appendHelperLog(command string, args []string) {
+	path := os.Getenv("TTS_HELPER_LOG")
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	line := strings.TrimSpace(command + " " + strings.Join(args, " "))
+	if line == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintln(f, line)
 }
 
 func startMockDaemon(t *testing.T, socketPath string, response map[string]interface{}) <-chan map[string]interface{} {

@@ -11,6 +11,7 @@
     "binary": ""
   },
   "tts": {
+    "engine": "system",
     "socket": "/tmp/claw-radio-tts.sock",
     "data_dir": "~/.local/share/claw-radio",
     "fallback_binary": "",

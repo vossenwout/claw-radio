@@ -115,6 +115,93 @@ func TestSayOnSuccessPrintsQueuedBanterAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestSayWhileIdleUsesAppendPlay(t *testing.T) {
+	socketPath := makePlaybackSocketPath(t, "say-idle")
+	server := startPlaybackMPVServerWithIdleState(t, socketPath, true)
+
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: socketPath,
+		},
+		TTS: config.TTSConfig{
+			DataDir: t.TempDir(),
+		},
+	}
+	ttsClient := &fakeSayTTSClient{}
+	restore := withSayTestHooks(cfg, ttsClient)
+	defer restore()
+
+	err := executeCommandForTest(t, "say", "hello")
+	if err != nil {
+		t.Fatalf("say failed: %v", err)
+	}
+	server.wait(t)
+
+	cmds := server.commands()
+	if len(cmds) != 2 {
+		t.Fatalf("command count = %d, want 2", len(cmds))
+	}
+	if got := cmds[0]; len(got) < 2 || got[0] != "get_property" || got[1] != "idle-active" {
+		t.Fatalf("first command = %#v, want get_property idle-active", got)
+	}
+	if got := cmds[1]; len(got) < 3 || got[0] != "loadfile" || got[2] != "append-play" {
+		t.Fatalf("second command = %#v, want loadfile append-play", got)
+	}
+}
+
+func TestSayUsesWAVForChatterboxEngine(t *testing.T) {
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: filepath.Join(t.TempDir(), "missing.sock"),
+		},
+		Station: config.StationConfig{
+			StateDir: t.TempDir(),
+		},
+		TTS: config.TTSConfig{
+			Engine:  config.TTSEngineChatterbox,
+			DataDir: t.TempDir(),
+		},
+	}
+	ttsClient := &fakeSayTTSClient{}
+	restore := withSayTestHooks(cfg, ttsClient)
+	defer restore()
+
+	err := executeCommandForTest(t, "say", "hello")
+	if err != nil {
+		t.Fatalf("say failed: %v", err)
+	}
+	if !strings.HasSuffix(ttsClient.lastOutPath, ".wav") {
+		t.Fatalf("out path = %q, want .wav suffix", ttsClient.lastOutPath)
+	}
+}
+
+func TestSayUsesAIFFForSystemSayEngine(t *testing.T) {
+	cfg := &config.Config{
+		MPV: config.MPVConfig{
+			Socket: filepath.Join(t.TempDir(), "missing.sock"),
+		},
+		Station: config.StationConfig{
+			StateDir: t.TempDir(),
+		},
+		TTS: config.TTSConfig{
+			Engine:         config.TTSEngineSystem,
+			DataDir:        t.TempDir(),
+			FallbackBinary: "/usr/bin/say",
+		},
+	}
+	ttsClient := &fakeSayTTSClient{}
+	restore := withSayTestHooks(cfg, ttsClient)
+	defer restore()
+
+	err := executeCommandForTest(t, "say", "hello")
+	if err != nil {
+		t.Fatalf("say failed: %v", err)
+	}
+	if !strings.HasSuffix(ttsClient.lastOutPath, ".aiff") {
+		t.Fatalf("out path = %q, want .aiff suffix", ttsClient.lastOutPath)
+	}
+}
+
 func TestSayOnSuccessClearsPendingBanterCue(t *testing.T) {
 	stateDir := t.TempDir()
 	socketPath := makePlaybackSocketPath(t, "say-clear-pending")

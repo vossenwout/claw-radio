@@ -16,6 +16,8 @@ const (
 	defaultTTSSocket       = "/tmp/claw-radio-tts.sock"
 	defaultSearchSearxURL  = "http://localhost:8888"
 	defaultSearchUserAgent = "claw-radio/1.0 (+https://github.com/vossenwout/claw-radio)"
+	TTSEngineSystem        = "system"
+	TTSEngineChatterbox    = "chatterbox"
 )
 
 type Config struct {
@@ -59,6 +61,7 @@ type BinaryConfig struct {
 }
 
 type TTSConfig struct {
+	Engine         string            `json:"engine"`
 	Socket         string            `json:"socket"`
 	DataDir        string            `json:"data_dir"`
 	FallbackBinary string            `json:"fallback_binary"`
@@ -91,8 +94,76 @@ func Load() (*Config, error) {
 
 	expandPaths(&cfg)
 	resolveBinaries(&cfg)
+	cfg.TTS.Engine = NormalizeTTSEngine(cfg.TTS.Engine)
 
 	return &cfg, nil
+}
+
+func ParseTTSEngine(raw string) (string, bool) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case TTSEngineSystem:
+		return TTSEngineSystem, true
+	case TTSEngineChatterbox:
+		return TTSEngineChatterbox, true
+	default:
+		return "", false
+	}
+}
+
+func NormalizeTTSEngine(raw string) string {
+	if engine, ok := ParseTTSEngine(raw); ok {
+		return engine
+	}
+	return TTSEngineSystem
+}
+
+func SetTTSEngine(raw string) error {
+	engine, ok := ParseTTSEngine(raw)
+	if !ok {
+		return fmt.Errorf("unsupported tts engine %q", raw)
+	}
+
+	path, err := configPath()
+	if err != nil {
+		return err
+	}
+
+	payload := map[string]any{}
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read config %s: %w", path, err)
+	}
+	if err == nil && strings.TrimSpace(string(data)) != "" {
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return fmt.Errorf("parse config %s: %w", path, err)
+		}
+	}
+
+	ttsValue, ok := payload["tts"]
+	if !ok {
+		payload["tts"] = map[string]any{"engine": engine}
+	} else {
+		ttsMap, ok := ttsValue.(map[string]any)
+		if !ok {
+			return fmt.Errorf("parse config %s: tts must be a JSON object", path)
+		}
+		ttsMap["engine"] = engine
+		payload["tts"] = ttsMap
+	}
+
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config %s: %w", path, err)
+	}
+	encoded = append(encoded, '\n')
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create config dir %s: %w", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		return fmt.Errorf("write config %s: %w", path, err)
+	}
+	return nil
 }
 
 func defaultConfig() Config {
@@ -102,6 +173,7 @@ func defaultConfig() Config {
 			Log:    "~/.local/share/claw-radio/mpv.log",
 		},
 		TTS: TTSConfig{
+			Engine:  TTSEngineSystem,
 			Socket:  defaultTTSSocket,
 			DataDir: "~/.local/share/claw-radio",
 			Voices: map[string]string{

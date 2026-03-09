@@ -30,6 +30,9 @@ func TestLoadNoConfigFileReturnsDefaults(t *testing.T) {
 	if cfg.TTS.Socket != defaultTTSSocket {
 		t.Fatalf("unexpected tts socket: %q", cfg.TTS.Socket)
 	}
+	if cfg.TTS.Engine != TTSEngineSystem {
+		t.Fatalf("unexpected tts engine: %q", cfg.TTS.Engine)
+	}
 	if cfg.TTS.DataDir != filepath.Join(home, ".local", "share", "claw-radio") {
 		t.Fatalf("unexpected tts data dir: %q", cfg.TTS.DataDir)
 	}
@@ -101,7 +104,7 @@ func TestLoadOverridesFromEnvironmentConfig(t *testing.T) {
 				"genre_top": ["yahoo", "ask"]
 			}
 		},
-		"tts": {"voices": {"pop": "~/voices/pop.wav"}}
+		"tts": {"engine": "chatterbox", "voices": {"pop": "~/voices/pop.wav"}}
 	}`
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
@@ -164,8 +167,55 @@ func TestLoadOverridesFromEnvironmentConfig(t *testing.T) {
 	if cfg.TTS.Voices["pop"] != filepath.Join(home, "voices", "pop.wav") {
 		t.Fatalf("expected expanded voice path override, got %q", cfg.TTS.Voices["pop"])
 	}
+	if cfg.TTS.Engine != TTSEngineChatterbox {
+		t.Fatalf("expected tts engine override, got %q", cfg.TTS.Engine)
+	}
 	if _, ok := cfg.TTS.Voices["country"]; !ok {
 		t.Fatalf("expected default voices map keys to remain populated")
+	}
+}
+
+func TestSetTTSEngineCreatesMinimalConfigFile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("CLAW_RADIO_CONFIG", configPath)
+
+	if err := SetTTSEngine(TTSEngineChatterbox); err != nil {
+		t.Fatalf("SetTTSEngine() error: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+	if !strings.Contains(string(data), `"engine": "chatterbox"`) {
+		t.Fatalf("config file missing chatterbox engine: %s", string(data))
+	}
+}
+
+func TestSetTTSEnginePreservesExistingConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"mpv":{"socket":"/tmp/custom.sock"},"tts":{"voices":{"pop":"~/voice.wav"}}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("CLAW_RADIO_CONFIG", configPath)
+
+	if err := SetTTSEngine(TTSEngineSystem); err != nil {
+		t.Fatalf("SetTTSEngine() error: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `"socket": "/tmp/custom.sock"`) {
+		t.Fatalf("config file should preserve mpv socket, got %s", content)
+	}
+	if !strings.Contains(content, `"engine": "system"`) {
+		t.Fatalf("config file missing system engine: %s", content)
+	}
+	if !strings.Contains(content, `"pop": "~/voice.wav"`) {
+		t.Fatalf("config file should preserve voices map, got %s", content)
 	}
 }
 

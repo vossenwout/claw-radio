@@ -41,7 +41,8 @@ sudo apt install -y mpv yt-dlp ffmpeg
 
 ```bash
 claw-radio tts install
-claw-radio tts voice add "https://www.youtube.com/watch?v=<sample>" --name pop
+claw-radio tts use chatterbox
+# custom TTS voices / voice cloning: coming soon
 ```
 
 ## Quick Start
@@ -57,7 +58,8 @@ claw-radio poll
 | Command | Flags | Description |
 | --- | --- | --- |
 | `tts install` | `none` | Install Chatterbox TTS files into the configured data directory. |
-| `tts voice add` | `--name <voice-name>` | Download a sample URL and save it as a reusable voice prompt WAV. |
+| `tts use chatterbox\|system` | `none` | Switch the active TTS engine between Chatterbox and the system voice. |
+| `tts voice add` | `--name <voice-name>` | Coming soon. Custom voice setup is disabled for v1 while voice cloning is finalized. |
 | `start` | `none` | Start the radio show. If already running, nothing changes. |
 | `stop` | `none` | End the current radio session and reset playlist, station state, and cached audio. |
 | `playlist add` | `none` | Add songs to the upcoming playlist queue from a JSON string array of `"Artist - Title"` items. |
