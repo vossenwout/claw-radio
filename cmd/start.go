@@ -26,7 +26,7 @@ const (
 	ttsPIDFileName      = "claw-radio-tts.pid"
 	mpvMissingMessage   = "mpv not found.\nInstall on macOS:  brew install mpv\nInstall on Linux:  apt install mpv   (Debian/Ubuntu)\n                   dnf install mpv   (Fedora)"
 	ytdlpMissingMessage = "yt-dlp not found.\nInstall on macOS:  brew install yt-dlp\nInstall on Linux:  pip install yt-dlp"
-	startReadyTimeout   = 60 * time.Second
+	startReadyTimeout   = 2 * time.Minute
 	startReadyPollEvery = 500 * time.Millisecond
 )
 
@@ -181,7 +181,7 @@ func waitForStartReady(cmd *cobra.Command, cfg *config.Config) error {
 		return nil
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "preparing your first song (downloading if needed)...")
+	fmt.Fprintln(cmd.OutOrStdout(), "preparing your first song (this can take a while if it needs to be downloaded)...")
 
 	deadline := time.Now().Add(startReadyTimeout)
 	for time.Now().Before(deadline) {
@@ -199,7 +199,7 @@ func waitForStartReady(cmd *cobra.Command, cfg *config.Config) error {
 		time.Sleep(startReadyPollEvery)
 	}
 
-	return fmt.Errorf("radio is running but still buffering the first song; check with: claw-radio status --json")
+	return fmt.Errorf("radio is running but still buffering the first song after %s; first-song downloads can take a while, check with: claw-radio status --json", startReadyTimeout)
 }
 
 func startupReadyTarget(cfg *config.Config) (int, bool, error) {
