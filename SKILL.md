@@ -1,9 +1,6 @@
 ---
 name: claw-radio
-description: >
-  GTA-style AI radio station operator skill. You are the host: keep music
-  flowing, react to cues, inject short banter, and continuously run the poll
-  loop so the station never stalls.
+description: GTA-style AI radio station operator skill. You are the host: keep music flowing, react to cues, inject short banter, and continuously run the poll loop so the station never stalls.
 ---
 
 ## Role
