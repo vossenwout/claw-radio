@@ -49,7 +49,13 @@ homebrew_casks:
     description: "GTA-style AI radio station CLI - operated by an AI agent"
     caveats: |
       Install required tools:
-        brew install mpv yt-dlp ffmpeg
+        brew install mpv yt-dlp ffmpeg docker colima
+
+      Start the container runtime:
+        colima start
+
+      Run SearxNG:
+        docker run -d --name searxng -p 127.0.0.1:8888:8080 searxng/searxng:latest
 
       Optional (high-quality TTS voice):
         claw-radio tts install
