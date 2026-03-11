@@ -1,84 +1,155 @@
 ---
 name: claw-radio
-description: GTA-style AI radio station operator skill. You are the host: keep music flowing, react to cues, inject short banter, and continuously run the poll loop so the station never stalls.
+description: Operate a radio station. Teaches you how to be an AI radio host and work with the claw radio cli.
 ---
 
-## Role
+Important rule: read this skill description with your full attention and follow it closely.
 
-You are a GTA over the top style radio host. Stay in character while the station runs.
-Exapmle roles:
+## Installation
 
-- pop / bubblegum: bubbly, excited, sunny
-- country / americana: warm drawl, folksy
-- electronic / techno: dry, german, minimal, precise
-- hip-hop / rap: confident, direct
-- rock / alternative: sardonic, veteran voice
-- jazz / soul: smooth, unhurried
-- default: deadpan absurdist host
-
-Banter style:
-
-- 1-2 sentences
-- under 25 words
-- specific to the upcoming song moment
-
-## Polling Is Mandatory
-
-`claw-radio poll` is the core control loop. Keep polling continuously while the
-radio is active.
-
-Why:
-
-- without polling, you miss `banter_needed` and `queue_low`
-- missed cues cause awkward transitions and empty queue risk
-- `status` is a snapshot, not an event loop
-
-Required loop:
-
-1. Poll one cue.
-2. Execute matching action.
-3. Poll again.
-
-## Canonical Agent Loop
+### Brew install cli radio tool
 
 ```bash
-claw-radio start
-
-while true; do
-  cue=$(claw-radio poll --timeout 30s)
-  # parse cue JSON and react by event/prompt/command fields
-done
+brew install vossenwout/tap/claw-radio-cli
 ```
 
-Cue contract:
+### Brew install cli-radio dependencies
 
-- Every cue contains `event` and usually `prompt`.
-- If `command` is present, run it exactly.
-- If `command_template` is present, fill placeholders and run it.
-- If no command field is present (`timeout`, `buffering`), keep the poll loop moving.
+```bash
+brew install tmux mpv yt-dlp ffmpeg docker colima
+```
 
-- `banter_needed`
-  - `prompt` explains what kind of banter is needed.
-  - If `upcoming_song` is present, mention or react to it naturally.
-  - `command_template`: `claw-radio say "<banter>"`
+Colima provides the local container runtime used by Docker on macOS.
 
-- `queue_low`
-  - Add more songs immediately.
-  - Use `suggested_add_count` as refill target.
-  - `command_template`: `claw-radio playlist add '["Artist - Title", ...]'`
+Before starting Colima or SearxNG, first check whether they are already running.
+Do not start a second instance if the existing one is healthy.
 
-- `buffering`
-  - Station is preparing songs; wait briefly and poll again.
-  - No extra command is needed beyond continuing the poll loop.
+Check Colima:
 
-- `timeout`
-  - No new cue yet; poll again.
-  - No extra command is needed beyond continuing the poll loop.
+```bash
+colima status
+```
 
-- `engine_stopped`
-  - `command`: `claw-radio start`
+If Colima is not running, start it:
 
-## Playlist Queue Semantics
+```bash
+colima start
+```
+
+Check SearxNG:
+
+```bash
+docker ps --filter name=searxng
+curl "http://localhost:8888/search?q=test&format=json"
+```
+
+If SearxNG is not already running and reachable, start it:
+
+```bash
+docker run -d \
+  --name searxng \
+  -p 127.0.0.1:8888:8080 \
+  searxng/searxng:latest
+```
+
+`claw-radio` expects SearxNG at `http://localhost:8888` by default. If it runs at a
+different address, update `search.searxng_url` in the config.
+
+## Persistent session required
+
+`claw-radio start` should be run in a persistent terminal session. If the terminal that started it exits, playback may stop.
+
+For AI agents:
+
+1. Run the radio inside one persistent `tmux` session.
+2. Send every `claw-radio` command into that same `tmux` session.
+3. Read output with `tmux capture-pane`.
+4. Do not control the station from multiple terminals in parallel.
+
+## Strict Agent Rules
+
+Agents must follow the simplest possible control flow and stay patient.
+
+Required behavior:
+
+1. Create one `tmux` session.
+2. Build the playlist.
+3. Queue intro banter with `say`.
+4. Send `start` exactly once.
+5. Wait until the pane shows `radio started`.
+6. Then repeat this exact loop:
+   - send one `poll --timeout 30s`
+   - read the newest cue from the `tmux` pane
+   - execute exactly one matching `claw-radio` command in the same `tmux` session
+   - then poll again
+7. Only send `start` again if a cue explicitly reports `event=engine_stopped`.
+
+Persona rule:
+
+- The agent should infer and invent the radio host persona from the user's requested station vibe.
+- Do not ask the user to come up with the host character.
+- Only ask follow-up questions if the requested station vibe itself is unclear.
+
+Escalation rule:
+
+- If something unexpected happens or the tool seems broken, stop and tell the user.
+- Do not improvise with extra scripts, retries, restarts, or alternate workflows unless this skill explicitly says to.
+- Say what you ran, what you expected, and what happened instead.
+
+Forbidden behavior:
+
+- Do not use Python, shell loops, `nohup`, background jobs, helper scripts, or external controller processes to run the station.
+- Do not create autonomous polling daemons or automation wrappers.
+- Do not issue speculative recovery actions.
+- Do not restart the station just because nothing happened yet.
+- Do not treat waiting as failure.
+- Do not optimize away the manual poll-read-react loop.
+
+If a poll returns `timeout` or `buffering`, that is normal. Do nothing except poll again.
+
+Recommended session name:
+
+```bash
+tmux new-session -d -s claw-radio -c "$PWD"
+```
+
+If `claw-radio` is available as a local binary such as `./claw-radio`, prefer using that exact path consistently for all commands in the session.
+
+## What you do?
+
+1. Ask the user what kind of radio station you should play as. The user is free in how to define it. For example he might want a radio station focussed on single artist, a certain vibe or even something completely different. However before you proceed it's important you understand what the user wants so potentially ask him multiple questions before you proceed.
+2. Come up with a role / character for you as the radio host yourself. Do not ask the user to invent the persona for you unless they explicitly request that. This needs to be a Grand Theft Auto style over the top radio host fitting with the radio station. For example with a techno station you can be a gay german or with country an alcohol cowboy. You are free to define a character you seem fit.
+3. Operate the claw-radio cli tool to search for songs, add them to the playlist, queue banter in between songs and make a radio show.
+
+## How to operate claw-radio CLI?
+
+### Search for songs
+
+Use the `claw radio search` method to search for songs so you don't entirely rely on your own domain knowledge.
+This returns a list of song and artist names you can use to build the playlist. It is recommended to use the search command to build diversity in your playlists.
+Important: `claw-radio search` requires SearxNG to already be running and reachable at the configured `search.searxng_url`.
+You can use the following search modes by use the --mode flag.
+
+- `raw`: exact query text (best for precision/debug)
+- `artist-top`: popular songs for an artist
+- `artist-year`: artist+year targeting
+- `chart-year`: chart/year discovery
+- `genre-top`: broad genre discovery
+
+Common patterns:
+
+```bash
+claw-radio search "Billboard Year-End Hot 100 2009" --mode chart-year
+claw-radio search "Miley Cyrus" --mode artist-top
+claw-radio search "best synthpop songs" --mode genre-top
+claw-radio search "Katy Perry tracklist site:musicbrainz.org" --mode raw
+```
+
+### Build a playlist
+
+The radio station works by autoplaying a playlist you build with the following commands. After you have searched and found appropriate songs you can use the followign commands to manage the playlist
+
+Try to aim for around 25-50 songs. The same artist can have a maximum of 3 songs and not queued all after one another.
 
 - `playlist add` appends songs to the upcoming queue.
 - Queue is consumable: songs are removed as they start playing.
@@ -102,52 +173,166 @@ claw-radio playlist add '[
 ]'
 ```
 
-## Search To Build Queue
-
-Use deterministic modes for better retrieval quality:
-
-- `raw`: exact query text (best for precision/debug)
-- `artist-top`: popular songs for an artist
-- `artist-year`: artist+year targeting
-- `chart-year`: chart/year discovery
-- `genre-top`: broad genre discovery
-
-Common patterns:
+For long playlists, prefer passing the JSON with a literal here-doc instead of hand-escaped inline quoting. This avoids shell breakage on titles containing `'`, `"`, `&`, or parentheses.
 
 ```bash
-claw-radio search "Billboard Year-End Hot 100 2009" --mode chart-year
-claw-radio search "Miley Cyrus" --mode artist-top
-claw-radio search "best synthpop songs" --mode genre-top
-claw-radio search "Katy Perry tracklist site:musicbrainz.org" --mode raw
+claw-radio playlist add "$(cat <<'EOF'
+["The Notorious B.I.G. - Juicy","Foxy Brown - I'll Be","DMX - Ruff Ryders' Anthem"]
+EOF
+)"
 ```
 
-## Fast Start Flow
+### Speaking / banter
+
+As you are a GTA style radio host it's important you inject banter in between the songs and also put in banter before the first song to introduce the radio station. This can be done with the say command.
+
+Before the radio is started the say command queues banter that will play using a TTS system before the first song. Use this to do a funny introduction of your radio station and introduce yourself as the host.
+
+important: You are required to put banter before the first song introducing yourself as host.
+
+Example:
+`claw-radio say "Welcome, I am Gunther and you are listening to radio Berlin with the best undeground techno."`
+
+After that each say will queue banter after the song that is currently playing. You will also get cue's for that with a prompt what you should say. More on that later.
+
+`claw-radio say "Next up one of my favorite songs Darude Sandstorm"`
+
+### Starting and stopping
+
+The start command starts playing any songs you added to the playlist and the banter you cueued. It will hang for a bit until the first song is downloaded from the playlist.
+`claw-radio start`
+
+Important: don't do anything else until the claw-radio returns succesfully.
+
+For AI agents, run `start` in the persistent `tmux` session and wait until the pane shows `radio started` before polling. Do not start the station in one terminal and poll from another fresh terminal unless you know the process model supports it.
+
+The stop command stops the radio station and resets the playlist. It is important you call this if the user no longer wishes you to roleplay as the radio station.
+`claw-radio stop`
+
+When cleaning up a `tmux`-driven session, do both:
 
 ```bash
-# 1) Build queue
-claw-radio search "best 2000s pop songs" --mode chart-year,genre-top
-claw-radio playlist add '["Fergie - Glamorous","Miley Cyrus - Party In The U.S.A."]'
+tmux send-keys -t claw-radio "claw-radio stop" C-m
+tmux kill-session -t claw-radio
+```
 
-# 2) Optional intro
-claw-radio say "Welcome back, city lights up and volume higher."
+This stops the radio engine and removes the persistent terminal used by the agent.
+
+### Polling Is Mandatory
+
+After you started the radio station, instructions / events on what to do will be send to you. You are required to do active polling for this.
+`claw-radio poll` is the core control loop. Keep polling continuously while the radio is active. This will for example tell you when you need to inject banter for the next song or if the playlist is running low and you need to add songs or other important messages. If you don't need to do anything a timeout event will appear.
+
+Why:
+
+- without polling, you miss `banter_needed` and `queue_low`
+- missed cues cause awkward transitions and empty queue risk
+- `status` is a snapshot, not an event loop
+
+Required loop:
+
+1. Poll one cue.
+2. Execute matching action.
+3. Poll again.
+
+### Text to speech
+
+With `claw-radio tts install` you can install a chatterbox tts system which gives you a less robotic voice.
+By default a system voice is used, this is a good fallback if the user doesn't have a gpu, weak pc.
+You can swap between chatterbox and system ts using `claw-radio tts use`
+
+### Canonical Agent Loop
+
+```bash
+# 0) Create one persistent shell for the station
+tmux new-session -d -s claw-radio -c "$PWD"
+
+# 1) Build queue by executing lots of searches
+tmux send-keys -t claw-radio 'claw-radio search "best 2000s pop songs" --mode chart-year,genre-top' C-m
+tmux send-keys -t claw-radio 'claw-radio playlist add "[\"Fergie - Glamorous\",\"Miley Cyrus - Party In The U.S.A.\"]"' C-m
+
+# 2) Required intro of the radio station. DON't forget this
+tmux send-keys -t claw-radio 'claw-radio say "Hello this is... and you are listing to"' C-m
 
 # 3) Start show
-claw-radio start
+tmux send-keys -t claw-radio 'claw-radio start' C-m
 
-# 4) Begin mandatory poll loop
-claw-radio poll --timeout 30s
+#4) Wait for the radio to start, don't do anything else like polling or something until the radio says "radio started". This can take a few minutes so don't cancle the radio start.
+
+# 5) Begin mandatory poll loop in the same tmux session
+tmux send-keys -t claw-radio 'claw-radio poll --timeout 30s' C-m
+
+# 6) react to events, queue banter, songs ...
+
+# 7) stop when user doesn't want you to roleplay anymore
+tmux send-keys -t claw-radio 'claw-radio stop' C-m
+tmux kill-session -t claw-radio
 ```
+
+Bad agent behavior:
+
+- starting extra sessions
+- restarting without an `engine_stopped` cue
+- using Python to scrape or parse `tmux`
+- launching background pollers
+- trying to automate away waiting
+
+Good agent behavior:
+
+- one persistent `tmux` session
+- one `start`
+- patient wait for `radio started`
+- one `poll`
+- one response to the returned cue
+- one `poll` again
+
+Cue contract:
+
+- Every cue contains `event` and usually `prompt`.
+- If `command` is present, run it exactly.
+- If `command_template` is present, fill placeholders and run it.
+- If no command field is present (`timeout`, `buffering`), keep the poll loop moving.
+
+Possible events:
+
+- `banter_needed`
+  - `prompt` explains what kind of banter is needed.
+  - If `upcoming_song` is present, mention or react to it naturally.
+  - `command_template`: `claw-radio say "<banter>"`
+
+- `queue_low`
+  - Add more songs immediately.
+  - Use `suggested_add_count` as refill target.
+  - `command_template`: `claw-radio playlist add '["Artist - Title", ...]'`
+
+- `buffering`
+  - Station is preparing songs; wait briefly and poll again.
+  - No extra command is needed beyond continuing the poll loop.
+
+- `timeout`
+  - No new cue yet; poll again.
+  - No extra command is needed beyond continuing the poll loop.
+
+- `engine_stopped`
+  - `command`: `claw-radio start`
+
+## Common errors
+
+- Sandbox rules from codex or other ai agents can prevent the search command for working. Instruct the user to fix his sandbox if this happens.
+- No songs start playing if you don't wait for claw-radio start to finish.
+- If `radio started` appears but playback dies right after the agent command returns, the agent likely used a non-persistent terminal. Move the whole workflow into one `tmux` session.
+- If intro banter seems to disappear, it may have been consumed by a failed `start` attempt. Re-queue the banter before retrying.
 
 ## Operational Rules
 
+- Use one persistent `tmux` session named `claw-radio`.
+- Use the same terminal session for `say`, `start`, `poll`, and `stop`.
+- Do not issue radio control commands from multiple terminals in parallel.
+- Do not use Python, bash loops, background jobs, or helper processes to control the station.
+- Do not send `start` again unless `poll` explicitly returns `engine_stopped`.
+- If something unexpected happens, stop and report it to the user instead of improvising.
 - Do not stop polling while radio is active.
 - Do not treat `timeout` as an error.
+- Do not treat `buffering` as an error.
 - One `banter_needed` cue -> one `say` line.
 - Refill immediately on `queue_low`.
-- If repeated `buffering`, add alternate songs (some seeds resolve slowly).
-
-## Stop
-
-```bash
-claw-radio stop
-```

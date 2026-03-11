@@ -6,36 +6,45 @@ banter, and react to playback events.
 
 ## Installation
 
-### macOS (Homebrew)
+### macOS / Linux (Homebrew)
 
 ```bash
 brew install vossenwout/tap/claw-radio-cli
 ```
 
-### Linux (curl + tar)
-
-```bash
-curl -fsSL -o claw-radio.tar.gz https://github.com/vossenwout/claw-radio/releases/latest/download/claw-radio_Linux_x86_64.tar.gz
-tar -xzf claw-radio.tar.gz
-sudo install -m 0755 claw-radio /usr/local/bin/claw-radio
-```
-
 ## Dependencies
 
-Install runtime media tools before running `claw-radio start`:
-
-### macOS
+Install all runtime dependencies before using `claw-radio`:
 
 ```bash
-brew install mpv yt-dlp ffmpeg
+brew install mpv yt-dlp ffmpeg docker colima
 ```
 
-### Linux (Debian/Ubuntu)
+Colima provides the local container runtime used by Docker on macOS.
+
+Start Colima:
 
 ```bash
-sudo apt update
-sudo apt install -y mpv yt-dlp ffmpeg
+colima start
 ```
+
+Run SearxNG:
+
+```bash
+docker run -d \
+  --name searxng \
+  -p 127.0.0.1:8888:8080 \
+  searxng/searxng:latest
+```
+
+Verify SearxNG is reachable:
+
+```bash
+curl "http://localhost:8888/search?q=test&format=json"
+```
+
+`claw-radio` expects SearxNG at `http://localhost:8888` by default. If your SearxNG
+instance runs somewhere else, update `search.searxng_url` in your config.
 
 ## Optional TTS Setup
 
