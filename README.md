@@ -1,10 +1,12 @@
 # claw-radio
 
-`claw-radio` is a CLI for running an AI-operated, GTA-style radio station:
-start continuous playback, build an upcoming playlist queue from web search, inject spoken
-banter, and react to playback events.
+`claw-radio` is a CLI for running an AI-operated, GTA-style radio station. Make your agent search for music, inject banter and play music from youtube.
 
 ## Installation
+
+### Agent Skill
+
+Agent skill can be found under `SKILL.md` just make your agent install this and it can guide you through the setup. You might also just copy the link to this repo and give it your agent.
 
 ### macOS / Linux (Homebrew)
 
