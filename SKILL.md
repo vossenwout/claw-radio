@@ -36,20 +36,79 @@ If Colima is not running, start it:
 colima start
 ```
 
-Check SearxNG:
+### SearxNG (required for `claw-radio search`)
+
+`claw-radio search` requires SearxNG to allow **JSON output** (`format=json`). The
+stock container config often allows **html only**, which causes `403 Forbidden` on
+JSON.
+
+#### 1) Check whether SearxNG is usable
 
 ```bash
 docker ps --filter name=searxng
-curl "http://localhost:8888/search?q=test&format=json"
+
+# Preflight: must return JSON (not HTML / 403)
+curl -fsS "http://localhost:8888/search?q=test&format=json" | head -c 1 | grep '{'
 ```
 
-If SearxNG is not already running and reachable, start it:
+#### 2) If SearxNG isn’t running OR the JSON preflight fails: bootstrap a persistent config
+
+Bootstrap once (generates a valid full settings.yml from the container image):
 
 ```bash
+# Start once without a mount so the container generates a valid settings.yml
+docker rm -f searxng 2>/dev/null || true
+docker run -d --name searxng -p 127.0.0.1:8888:8080 searxng/searxng:latest
+
+# Copy generated config to a persistent location
+mkdir -p ~/.openclaw/searxng
+docker cp searxng:/etc/searxng/settings.yml ~/.openclaw/searxng/settings.yml
+```
+
+Patch `search.formats` to include JSON (+ rss optional):
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import re
+
+p = Path.home()/'.openclaw/searxng/settings.yml'
+t = p.read_text()
+
+m = re.search(r'(?ms)^search:\n(.*?)(^server:)', t)
+assert m, "Could not locate search: block in settings.yml"
+
+sb = t[m.start():m.end()]
+sb2 = re.sub(
+    r'(?ms)^  formats:\n(?:\s*-\s*.*\n)+',
+    '  formats:\n    - html\n    - json\n    - rss\n',
+    sb
+)
+
+if sb2 == sb:
+    sb2 = sb.replace('\n\nserver:', '\n  formats:\n    - html\n    - json\n    - rss\n\nserver:')
+
+p.with_suffix('.yml.bak').write_text(t)
+p.write_text(t[:m.start()] + sb2 + t[m.end():])
+print('Patched search.formats to include json')
+PY
+```
+
+Recreate the container with the mounted config:
+
+```bash
+docker rm -f searxng
 docker run -d \
   --name searxng \
   -p 127.0.0.1:8888:8080 \
+  -v ~/.openclaw/searxng:/etc/searxng \
   searxng/searxng:latest
+```
+
+Re-run the JSON preflight:
+
+```bash
+curl -fsS "http://localhost:8888/search?q=test&format=json" | head -c 1 | grep '{'
 ```
 
 `claw-radio` expects SearxNG at `http://localhost:8888` by default. If it runs at a
