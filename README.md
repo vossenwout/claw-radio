@@ -8,6 +8,9 @@
 
 Agent skill can be found under `SKILL.md` just make your agent install this and it can guide you through the setup. You might also just copy the link to this repo and give it your agent.
 
+You can also make your OpenClaw agent install skill on:
+`https://clawhub.ai/vossenwout/claw-radio`
+
 ### macOS / Linux (Homebrew)
 
 ```bash
